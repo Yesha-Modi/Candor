@@ -1,5 +1,4 @@
-"""Quick look at what landed in the database."""
-
+# Taking a quick look at what landed in the database.
 import duckdb
 
 from src.config import DB_PATH

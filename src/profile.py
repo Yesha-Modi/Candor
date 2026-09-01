@@ -1,5 +1,4 @@
-"""Profile the raw tables to inform the star schema design."""
-
+# Profiling the raw tables to inform the star schema design.
 import duckdb
 import pandas as pd
 

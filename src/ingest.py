@@ -1,5 +1,4 @@
-"""Load the raw Olist CSV files into DuckDB."""
-
+# Loaded the raw Olist CSV files into DuckDB.
 import duckdb
 
 from src.config import RAW_DATA_DIR, DB_DIR, DB_PATH, RAW_SCHEMA
