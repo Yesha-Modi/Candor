@@ -1,0 +1,95 @@
+version: 2
+
+models:
+  - name: stg_customers
+    description: One row per order-customer. Not one row per person.
+    columns:
+      - name: customer_id
+        description: Per-order customer key. Unique here, joins to stg_orders.
+        data_tests: [unique, not_null]
+      - name: customer_unique_id
+        description: Identifies the actual person. Repeats across orders.
+        data_tests: [not_null]
+
+  - name: stg_orders
+    description: One row per order.
+    columns:
+      - name: order_id
+        data_tests: [unique, not_null]
+      - name: customer_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_customers')
+                field: customer_id
+      - name: status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['delivered', 'shipped', 'canceled', 'unavailable',
+                         'invoiced', 'processing', 'created', 'approved']
+
+  - name: stg_order_items
+    description: One row per line item. Multiple rows per order.
+    columns:
+      - name: order_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_orders')
+                field: order_id
+      - name: item_price
+        data_tests: [not_null]
+
+  - name: stg_order_payments
+    description: One row per payment instrument per order.
+    columns:
+      - name: order_id
+        data_tests: [not_null]
+      - name: payment_amount
+        data_tests: [not_null]
+
+  - name: stg_order_reviews
+    description: >
+      One row per (review, order) link. Neither review_id nor order_id is unique:
+      789 reviews cover multiple orders each (basket splitting), and 551 orders
+      carry more than one review. The grain is the pair. Verified Oct 2026 —
+      all 789 duplicated review_ids have identical score and comment text, so
+      these are genuine one-to-many links, not duplicate records.
+    columns:
+      - name: review_id
+        description: Review identifier. Repeats when one review covers several orders.
+        data_tests: [not_null]
+      - name: order_id
+        description: Order this review is linked to. Repeats when an order has several reviews.
+        data_tests: [not_null]
+      - name: score
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5]
+                
+  - name: stg_products
+    columns:
+      - name: product_id
+        data_tests: [unique, not_null]
+
+  - name: stg_sellers
+    columns:
+      - name: seller_id
+        data_tests: [unique, not_null]
+
+  - name: stg_category_translation
+    columns:
+      - name: category_name_pt
+        data_tests: [unique, not_null]
+      - name: category_name_en
+        data_tests: [not_null]
+
+  - name: stg_geolocation
+    description: Deduplicated to one row per zip prefix.
+    columns:
+      - name: zip_code_prefix
+        data_tests: [unique, not_null]

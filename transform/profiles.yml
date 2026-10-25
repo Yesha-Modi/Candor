@@ -1,0 +1,7 @@
+candor:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ../db/candor.duckdb
+      threads: 4

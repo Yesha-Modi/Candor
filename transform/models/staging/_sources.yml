@@ -1,0 +1,25 @@
+version: 2
+
+sources:
+  - name: raw
+    description: Raw Olist CSV files loaded verbatim by src/ingest.py. Never edited in place.
+    schema: raw
+    tables:
+      - name: customers
+        description: One row per order, not per person. customer_unique_id identifies the actual person.
+      - name: orders
+        description: One row per order. 99,441 rows.
+      - name: order_items
+        description: One row per line item. Multiple rows per order — join with care.
+      - name: order_payments
+        description: One row per payment instrument per order. Multiple rows per order.
+      - name: order_reviews
+        description: Customer reviews. review_id is not reliably unique.
+      - name: products
+        description: Product catalogue. Category names are in Portuguese.
+      - name: sellers
+        description: Marketplace sellers.
+      - name: geolocation
+        description: Approximately 53 rows per zip prefix. Must be deduplicated before joining.
+      - name: category_translation
+        description: Portuguese to English product category names.
