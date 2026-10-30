@@ -1,0 +1,52 @@
+version: 2
+
+models:
+  - name: dim_customers
+    description: >
+      One row per person, keyed on customer_unique_id (96,096 rows) — NOT per order.
+      The source customers table has one row per order (99,441); customer_id is an
+      order-level key, not a person. Address is taken from the person's most recent
+      order. Latitude and longitude are empty where the postcode has no geolocation
+      match; those customers are kept rather than dropped.
+    columns:
+      - name: customer_key
+        description: The person. Join orders here, not on customer_id.
+        data_tests: [unique, not_null]
+      - name: order_count
+        description: How many orders this person has placed, across all time.
+        data_tests: [not_null]
+      - name: is_repeat_customer
+        description: True when order_count is greater than 1.
+        data_tests: [not_null]
+
+  - name: dim_products
+    description: >
+      One row per product. Category is the English name; products with no category
+      in the source are labelled 'unknown' rather than left empty, so they group
+      visibly instead of disappearing.
+    columns:
+      - name: product_key
+        data_tests: [unique, not_null]
+      - name: category
+        description: English category name, or 'unknown'. Never empty.
+        data_tests: [not_null]
+
+  - name: dim_sellers
+    description: >
+      One row per seller. Latitude and longitude are empty where the postcode has no
+      geolocation match.
+    columns:
+      - name: seller_key
+        data_tests: [unique, not_null]
+
+  - name: dim_dates
+    description: >
+      One row per calendar day, covering full years from the first to the last order.
+      Built from a generated series, not from source data. Join here for month,
+      quarter, and weekend grouping rather than computing dates inline.
+    columns:
+      - name: date_key
+        data_tests: [unique, not_null]
+      - name: month_start
+        description: First day of the month. Group by this, not month_name.
+        data_tests: [not_null]

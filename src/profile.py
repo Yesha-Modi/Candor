@@ -28,6 +28,38 @@ CHECKS = [
         "Geolocation duplicates",
         "SELECT count(*) AS geo_rows, count(DISTINCT geolocation_zip_code_prefix) AS zips FROM raw.geolocation",
     ),
+    (
+        "dim_customers is one row per person",
+        """
+        select
+            count(*)                        as rows_in_dim,
+            count(distinct customer_key)    as distinct_people,
+            sum(order_count)                as orders_accounted_for,
+            sum(case when is_repeat_customer then 1 else 0 end) as repeat_customers
+        from marts.dim_customers
+        """,
+    ),
+    (
+        "dim_dates covers the full range",
+        """
+        select
+            count(*)          as days,
+            min(date_key)     as first_day,
+            max(date_key)     as last_day,
+            count(distinct month_start) as months
+        from marts.dim_dates
+        """,
+    ),
+    (
+        "dim_products categories",
+        """
+        select
+            count(*)                            as products,
+            count(distinct category)            as categories,
+            sum(case when category = 'unknown' then 1 else 0 end) as uncategorised
+        from marts.dim_products
+        """,
+    ),
 ]
 
 
