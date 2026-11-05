@@ -1,0 +1,9 @@
+- id: Q001
+  category: simple_aggregate
+  question: How many orders are there in total?
+  expected_behavior: answer
+  sql: |
+    select count(*) as total_orders
+    from marts.fct_orders
+  verified: false
+  notes: ""
