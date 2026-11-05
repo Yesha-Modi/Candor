@@ -21,14 +21,19 @@ models:
 
   - name: dim_products
     description: >
-      One row per product. Category is the English name; products with no category
-      in the source are labelled 'unknown' rather than left empty, so they group
-      visibly instead of disappearing.
+      One row per product (32,951). Category resolves in this order: Olist's English
+      translation, then our own override seed, then the Portuguese name, then 'unknown'.
+      Olist's translation table is missing two categories affecting 13 products
+      (portateis_cozinha_e_preparadores_de_alimentos and pc_gamer) — those are supplied
+      by seeds/category_translation_overrides.csv, kept separate so it is clear which
+      translations are Olist's and which are ours. 610 products have no category at all
+      in the source and are labelled 'unknown'. Nothing is left empty, so uncategorised
+      products group visibly instead of disappearing.
     columns:
       - name: product_key
         data_tests: [unique, not_null]
       - name: category
-        description: English category name, or 'unknown'. Never empty.
+        description: English name, override, Portuguese name, or 'unknown'. Never empty.
         data_tests: [not_null]
 
   - name: dim_sellers

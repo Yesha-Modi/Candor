@@ -16,3 +16,7 @@ models:
     marts:
       +materialized: table
       +schema: marts
+
+seeds:
+  candor:
+    +schema: staging
