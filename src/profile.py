@@ -1,4 +1,4 @@
-#Profile source and built tables, and verify the dimension layer.
+"""Profile source and built tables, and verify the dimension layer."""
 
 import duckdb
 import pandas as pd
@@ -34,7 +34,7 @@ CHECKS = [
         "Customers vs people",
         """
         select
-            count(*)                           as customer_rows,
+            count(*)                          as customer_rows,
             count(distinct customer_unique_id) as people
         from raw.customers
         """,
@@ -147,6 +147,49 @@ CHECKS = [
                                        'portateis_cozinha_e_preparadores_de_alimentos')
                      then 1 else 0 end)                             as still_untranslated
         from marts.dim_products
+        """,
+    ),
+    # ---------- Built fact tables ----------
+
+    (
+        "fct_orders has one row per order",
+        """
+        select
+            count(*)                  as rows_in_fact,
+            count(distinct order_key) as distinct_orders,
+            sum(case when is_delivered then 1 else 0 end)   as delivered,
+            sum(case when is_cancelled then 1 else 0 end)   as cancelled,
+            sum(case when item_count = 0 then 1 else 0 end) as orders_with_no_items
+        from marts.fct_orders
+        """,
+    ),
+    (
+        "Delivery timing coverage",
+        """
+        select
+            count(*)                       as total_orders,
+            count(days_to_deliver)         as have_delivery_time,
+            round(avg(days_to_deliver), 1) as avg_days_to_deliver,
+            sum(case when is_late then 1 else 0 end) as late_deliveries
+        from marts.fct_orders
+        """,
+    ),
+    (
+        "The two totals must agree",
+        """
+        select
+            (select sum(items_value) from marts.fct_orders)      as from_orders,
+            (select sum(item_price)  from marts.fct_order_items) as from_items
+        """,
+    ),
+    (
+        "What a careless join costs you",
+        """
+        select
+            (select sum(order_value) from marts.fct_orders) as correct_total,
+            (select sum(o.order_value)
+             from marts.fct_orders o
+             join marts.fct_order_items i on o.order_key = i.order_key) as inflated_total
         """,
     ),
 ]

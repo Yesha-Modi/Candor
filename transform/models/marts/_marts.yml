@@ -1,6 +1,9 @@
 version: 2
 
 models:
+
+  # ---------- Dimensions ----------
+
   - name: dim_customers
     description: >
       One row per person, keyed on customer_unique_id (96,096 rows) — NOT per order.
@@ -54,4 +57,68 @@ models:
         data_tests: [unique, not_null]
       - name: month_start
         description: First day of the month. Group by this, not month_name.
+        data_tests: [not_null]
+
+  # ---------- Facts ----------
+
+  - name: fct_orders
+    description: >
+      One row per order (99,441). Money columns are aggregated from items, payments and
+      reviews BEFORE joining, so nothing is multiplied. Use is_delivered for revenue
+      questions — it is the only status where goods demonstrably arrived. 775 orders have
+      no items at all and are kept with item_count 0. Delivery-time columns are empty for
+      orders with no delivery date, including two that claim delivered status without one.
+    columns:
+      - name: order_key
+        data_tests: [unique, not_null]
+      - name: customer_key
+        description: The person who ordered. Joins to dim_customers.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_key
+      - name: order_date
+        description: Purchase date. Join to dim_dates for month and quarter grouping.
+        data_tests: [not_null]
+      - name: is_delivered
+        description: The default filter for revenue questions.
+        data_tests: [not_null]
+      - name: item_count
+        description: Number of line items. Zero for the 775 orders with none.
+        data_tests: [not_null]
+
+  - name: fct_order_items
+    description: >
+      One row per line item (112,650). This is a finer level of detail than fct_orders —
+      joining the two multiplies order rows by their item count, so never add up an
+      order-level number after joining them. Order status is copied here so that
+      product-level questions can filter on it without a join.
+    columns:
+      - name: order_item_key
+        description: order_id and item_number joined with a hyphen. Unique.
+        data_tests: [unique, not_null]
+      - name: order_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_orders')
+                field: order_key
+      - name: product_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_key
+      - name: seller_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_sellers')
+                field: seller_key
+      - name: item_price
         data_tests: [not_null]
