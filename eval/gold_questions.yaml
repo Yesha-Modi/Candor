@@ -5,8 +5,8 @@
   sql: |
     select count(*) as total_orders
     from marts.fct_orders
-  verified: false
-  notes: ""
+  verified: true
+  notes: "99,441. Cross-check: matches staging.stg_orders exactly."
 
 - id: Q002
   category: simple_aggregate
@@ -16,8 +16,8 @@
     select count(*) as delivered_orders
     from marts.fct_orders
     where is_delivered
-  verified: false
-  notes: ""
+  verified: true
+  notes: "96,478 (97.0%). Cross-check: matches status = 'delivered' in staging."
 
 - id: Q003
   category: simple_aggregate
@@ -27,8 +27,10 @@
     select round(sum(order_value), 2) as total_revenue
     from marts.fct_orders
     where is_delivered
-  verified: false
-  notes: ""
+  verified: true
+  notes: "R$15,419,773.75. Cross-check from fct_order_items matches exactly. Also equals
+    delivered item revenue (R$13,221,498.11) + delivered freight (R$2,198,275.64)
+    to the cent."
 
 - id: Q004
   category: simple_aggregate
@@ -38,8 +40,8 @@
     select round(avg(order_value), 2) as avg_order_value
     from marts.fct_orders
     where is_delivered
-  verified: false
-  notes: ""
+  verified: true
+  notes: "R$159.83. Equals Q003 / 96,478 delivered orders."
 
 - id: Q005
   category: simple_aggregate
@@ -48,8 +50,8 @@
   sql: |
     select count(*) as customers
     from marts.dim_customers
-  verified: false
-  notes: ""
+  verified: true
+  notes: "96,096 people. Cross-check: matches distinct customer_unique_id in staging."
 
 - id: Q006
   category: simple_aggregate
@@ -59,8 +61,8 @@
     select count(*) as repeat_customers
     from marts.dim_customers
     where is_repeat_customer
-  verified: false
-  notes: ""
+  verified: true
+  notes: "2,997 (3.12% of customers). Cross-check: matches order_count > 1."
 
 - id: Q007
   category: simple_aggregate
@@ -70,8 +72,9 @@
     select round(avg(review_score), 3) as avg_review_score
     from marts.fct_orders
     where review_count > 0
-  verified: false
-  notes: ""
+  verified: true
+  notes: "4.087. Cross-check recomputed from staging.stg_order_reviews matches.
+    Consistent with Q017, where the worst categories sit at 3.6-3.9."
 
 - id: Q008
   category: simple_aggregate
@@ -81,8 +84,8 @@
     select count(*) as cancelled_orders
     from marts.fct_orders
     where is_cancelled
-  verified: false
-  notes: ""
+  verified: true
+  notes: "1,234 (625 canceled + 609 unavailable). Cross-check matches raw statuses."
 
 - id: Q009
   category: simple_aggregate
@@ -92,8 +95,9 @@
     select round(avg(days_to_deliver), 2) as avg_days_to_deliver
     from marts.fct_orders
     where days_to_deliver is not null
-  verified: false
-  notes: ""
+  verified: true
+  notes: "12.4973 days. Cross-check recomputed with date_diff from the original
+    timestamps matches."
 
 - id: Q010
   category: simple_aggregate
@@ -103,8 +107,8 @@
     select count(*) as late_orders
     from marts.fct_orders
     where is_late
-  verified: false
-  notes: ""
+  verified: true
+  notes: "7,827. Cross-check matches a direct delivered_at > estimated_delivery_at comparison."
 
 - id: Q011
   category: simple_aggregate
@@ -113,8 +117,8 @@
   sql: |
     select count(*) as products
     from marts.dim_products
-  verified: false
-  notes: ""
+  verified: true
+  notes: "32,951. Cross-check: matches staging.stg_products, nothing dropped."
 
 - id: Q012
   category: simple_aggregate
@@ -123,8 +127,8 @@
   sql: |
     select count(*) as sellers
     from marts.dim_sellers
-  verified: false
-  notes: ""
+  verified: true
+  notes: "3,095. Cross-check: matches staging.stg_sellers, nothing dropped."
 
 - id: Q013
   category: simple_aggregate
@@ -134,8 +138,9 @@
     select round(sum(freight_value), 2) as total_freight
     from marts.fct_orders
     where is_delivered
-  verified: false
-  notes: ""
+  verified: true
+  notes: "R$2,198,275.64 — 14.26% of delivered order value. Cross-check from
+    fct_order_items matches exactly."
 
 - id: Q014
   category: simple_aggregate
@@ -143,12 +148,15 @@
   expected_behavior: answer
   sql: |
     select
-        round(100.0 * count(*) filter (where is_late) / count(*), 2) as late_pct
+      count(*) filter (where is_delivered)                               as delivered,
+      count(*) filter (where is_delivered and delivered_at is not null)  as delivered_with_date,
+      count(*) filter (where is_late)                                    as late,
+      count(*) filter (where is_late and not is_delivered)               as late_but_not_delivered
     from marts.fct_orders
-    where is_delivered
-      and delivered_at is not null
-  verified: false
-  notes: ""
+  verified: true
+  notes: "8.1124% — 7,826 late orders over 96,470 delivered-with-a-date. Note the
+    numerator is 7,826, not Q010's 7,827: one late order does not have
+    delivered status."
 
 - id: Q015
   category: simple_aggregate
@@ -158,12 +166,14 @@
     select count(*) as multi_item_orders
     from marts.fct_orders
     where item_count > 1
-  verified: false
-  notes: ""
+  verified: true
+  notes: "9,803 orders (9.9% of the 98,666 with items). Cross-check recounted from
+    fct_order_items matches. Implies 13,984 extra items spread over those orders,
+    about 1.43 extra each."
 
 - id: Q016
   category: multi_table_join
-  question: Which product category generated the most revenue from delivered orders?
+  question: Which product category generated the most revenue from item sales, excluding freight?
   expected_behavior: answer
   sql: |
     select
@@ -175,27 +185,38 @@
     group by p.category
     order by revenue desc
     limit 1
-  verified: false
-  notes: ""
+  verified: true
+  notes: "health_beauty, R$1,233,131.72. Still first when freight is included, so the answer is robust."
 
 - id: Q017
   category: multi_table_join
   question: Which five product categories have the lowest average review score?
   expected_behavior: answer
   sql: |
+    with order_categories as (
+        select distinct
+            i.order_key,
+            p.category
+        from marts.fct_order_items i
+        join marts.dim_products p on i.product_key = p.product_key
+    )
     select
-        p.category,
+        oc.category,
         round(avg(o.review_score), 3) as avg_review_score,
-        count(distinct o.order_key)   as orders
-    from marts.fct_order_items i
-    join marts.dim_products p on i.product_key = p.product_key
-    join marts.fct_orders   o on i.order_key   = o.order_key
+        count(*)                      as orders
+    from order_categories oc
+    join marts.fct_orders o on oc.order_key = o.order_key
     where o.review_count > 0
-    group by p.category
+    group by oc.category
+    having count(*) >= 100
     order by avg_review_score asc
     limit 5
-  verified: false
-  notes: ""
+  verified: true
+  notes: "office_furniture 3.616 (1,263 orders), fashion_male_clothing 3.703,
+    audio 3.834, construction_tools_safety 3.849, home_confort 3.863.
+    FIXED before verifying: original averaged review_score after joining items,
+    over-weighting multi-item orders, and had no minimum size so a 2-order
+    category topped the list. office_furniture was 3.489 under the buggy version."
 
 - id: Q018
   category: multi_table_join
@@ -210,8 +231,9 @@
     group by c.customer_state
     order by orders desc
     limit 1
-  verified: false
-  notes: ""
+  verified: true
+  notes: "SP, 41,752 orders — 42.0% of all 99,441. Cross-check confirms orders per
+    state sums back to the total."
 
 - id: Q019
   category: multi_table_join
@@ -228,8 +250,11 @@
     group by c.customer_state
     order by delivered_orders desc
     limit 10
-  verified: false
-  notes: ""
+  verified: true
+  notes: "SP fastest at 8.70 days (40,500 orders), BA slowest at 19.28. Top 10 states
+    cover 87,302 of 96,476 delivered orders (90.5%), weighted average 11.69 days
+    against an overall 12.50 — implying ~20 days for the remaining 17 states.
+    SP's delivered rate of 97.0% matches the overall rate exactly."
 
 - id: Q020
   category: multi_table_join
@@ -246,8 +271,10 @@
     group by s.seller_key, s.seller_state
     order by revenue desc
     limit 1
-  verified: false
-  notes: ""
+  verified: true
+  notes: "Seller 4869f7a5dfa277a7dca6462dcf3b52b2 (SP), R$226,987.93 — 1.72% of total
+    delivered item revenue, 53x the average across 3,095 sellers. Long-tail
+    distribution as expected for a marketplace."
 
 - id: Q021
   category: multi_table_join
@@ -264,8 +291,10 @@
     group by i.seller_key
     order by revenue desc
     limit 5
-  verified: false
-  notes: ""
+  verified: true
+  notes: "Top seller 4869f7a5... matches Q020 exactly (R$226,987.93) — free cross-check.
+    Category breadth varies widely at the same revenue level: #1 sells 10 categories,
+    #2 sells only 2. Revenue clustered within 22% across the top five."
 
 - id: Q022
   category: multi_table_join
@@ -282,8 +311,11 @@
     group by p.category
     having count(*) >= 500
     order by avg_item_price desc
-  verified: false
-  notes: ""
+  verified: true
+  notes: "28 categories at 500+ delivered items, R$283.13 (musical_instruments) down to
+    R$56.81 (electronics). Cross-checks against Q016: items_sold x avg_item_price
+    reproduces each category's revenue to the rounding. Covers 102,802 items, ~94%
+    of delivered items. 'unknown' appears with 1,537 items, as intended by D12."
 
 - id: Q023
   category: multi_table_join
@@ -301,8 +333,13 @@
     group by p.category
     order by items_bought desc
     limit 10
-  verified: false
-  notes: ""
+  verified: true
+  notes: "bed_bath_table 1,098 items, then furniture_decor 810, sports_leisure 662.
+    Repeat customers are 3.12% of people but 7.57% of delivered items in these
+    categories — ~2.4x their share. Against that baseline, fashion_bags_accessories
+    over-indexes 1.72x and bed_bath_table 1.32x, while telephony (0.67x) and
+    watches_gifts (0.72x) under-index. Counts items, not orders — 'most often' is
+    interpreted as item volume."
 
 - id: Q024
   category: multi_table_join
@@ -314,8 +351,10 @@
     join marts.dim_sellers   s on i.seller_key   = s.seller_key
     join marts.dim_customers c on i.customer_key = c.customer_key
     where s.seller_state <> c.customer_state
-  verified: false
-  notes: ""
+  verified: true
+  notes: "63,308 orders — 64.2% of the 98,666 orders that have items. Implies 35,358
+    same-state-only orders. Checked for null states on both sides (zero on each),
+    so the <> comparison isn't silently excluding rows."
 
 - id: Q025
   category: multi_table_join
@@ -333,8 +372,12 @@
     group by p.category
     having count(*) >= 100
     order by freight_pct_of_price desc
-  verified: false
-  notes: ""
+  verified: true
+  notes: "4.42% (computers) to 36.52% (christmas_supplies) across 52 categories at 100+
+    items. All 8 overlapping values match the Q016 freight spot-check exactly;
+    item counts match Q022 exactly. Freight share tracks inversely with average
+    item price — cheap bulky goods ship expensively as a share of value.
+    office_furniture (R$161, 25.01%) is the sensible exception: expensive and bulky."
 
 - id: Q026
   category: multi_table_join
@@ -352,8 +395,12 @@
     having count(*) >= 100
     order by avg_order_value desc
     limit 5
-  verified: false
-  notes: ""
+  verified: true
+  notes: "divinopolis R$290.69 (132 orders) down to maceio R$218.74 (236), all 1.4-1.8x
+    the ~R$160 average delivered order. All five are far from Sao Paulo — order_value
+    includes freight, so this partly measures distance from sellers rather than
+    customer spending. Worth splitting items_value from freight_value if the
+    question is really about basket size."
 
 - id: Q027
   category: multi_table_join
@@ -371,27 +418,43 @@
     group by p.category
     order by one_star_orders desc
     limit 10
-  verified: false
-  notes: ""
+  verified: true
+  notes: "bed_bath_table 1,111 one-star orders, then health_beauty 778, computers_accessories
+    739. Uses count(distinct order_key), so no fan-out. Ranking largely tracks category
+    size — normalised by delivered items the rates sit in a narrow 7.3%-10.1% band
+    (bed_bath_table 1.14x the baseline, housewares 0.82x). A raw count answers the
+    question asked but mostly measures category volume, not quality."
 
 - id: Q028
   category: multi_table_join
   question: Which seller states have the worst average delivery time?
   expected_behavior: answer
   sql: |
+    with order_sellers as (
+        select distinct
+            i.order_key,
+            s.seller_state
+        from marts.fct_order_items i
+        join marts.dim_sellers s on i.seller_key = s.seller_key
+    )
     select
-        s.seller_state,
-        count(distinct o.order_key)      as orders,
+        os.seller_state,
+        count(*)                         as orders,
         round(avg(o.days_to_deliver), 2) as avg_days_to_deliver
-    from marts.fct_order_items i
-    join marts.dim_sellers s on i.seller_key = s.seller_key
-    join marts.fct_orders  o on i.order_key  = o.order_key
+    from order_sellers os
+    join marts.fct_orders o on os.order_key = o.order_key
     where o.days_to_deliver is not null
-    group by s.seller_state
-    having count(distinct o.order_key) >= 100
+    group by os.seller_state
+    having count(*) >= 100
     order by avg_days_to_deliver desc
-  verified: false
-  notes: ""
+  verified: true
+  notes: "MA 17.64 days (389 orders) down to RS 11.44 (1,962). Weighted average 12.47
+    against the known overall 12.50 — gap is the small states dropped by the
+    having clause. Rows sum to 96,725 vs 96,476 delivered orders: not fan-out,
+    an order shipping from two states appears under both, so ~249 orders (0.26%)
+    are multi-state. SP sellers 12.29 days across 71% of pairs, while Q019 shows
+    SP customers at 8.70 — proximity to sellers matters more than being one.
+    FIXED before verifying: original averaged days_to_deliver after joining items."
 
 - id: Q029
   category: multi_table_join
@@ -409,8 +472,13 @@
     group by p.category, c.customer_state
     order by revenue desc
     limit 10
-  verified: false
-  notes: ""
+  verified: true
+  notes: "All ten combinations are SP. Cross-checks against Q016: SP share per category
+    runs 34.2%-46.2%, mean 39.2%, against SP's 42.0% share of all orders.
+    Heavier-freight categories are more SP-concentrated (bed_bath_table 46.2% at
+    19.7% freight; watches_gifts 36.1% at 8.4%) — bulky goods stay local.
+    Note the top-10 is entirely SP, so the question mainly shows SP dominance
+    rather than anything about category-state fit."
 
 - id: Q030
   category: multi_table_join
@@ -425,5 +493,7 @@
         where i.product_key = p.product_key
           and i.is_delivered
     )
-  verified: false
-  notes: ""
+  verified: true
+  notes: "735 products — 2.23% of the 32,951 catalogue. These appear only in orders that
+    were never delivered (2,963 such orders, ~3,378 items). Cross-check confirms
+    735 + 32,216 sold = 32,951."

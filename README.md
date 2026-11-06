@@ -122,10 +122,11 @@ Only the first group is unknown. The other 13 were losing a label we already had
 fallback chain and a small override seed, kept separate from the source so it is clear which
 translations are Olist's and which are mine.
 
-### Two orders claim delivery with no delivery date
+### Eight orders claim delivery with no delivery date
 
-96,478 orders are marked `delivered`; only 96,476 have a delivery date. Those two get **empty**
-delivery times, not zero. Zero would drag every average down with two impossible same-day
+96,478 orders are marked `delivered`, but only **96,470** of them have a delivery date — eight
+do not. Separately, **six** orders carry a delivery date without `delivered` status. Those
+eight get **empty** delivery times, not zero. Zero would drag every average down with two impossible same-day
 deliveries. The `is_late` flag returns null rather than false for undelivered orders — because
 otherwise a warehouse that stopped shipping entirely would show a perfect record.
 
@@ -187,7 +188,7 @@ Everything here is free, with no paid tier anywhere in the project.
 ## Running it
 
 ```bash
-git clone https://github.com/<username>/candor.git
+git clone https://github.com/Yesha-Modi/candor.git
 cd candor
 
 py -3.13 -m venv .venv

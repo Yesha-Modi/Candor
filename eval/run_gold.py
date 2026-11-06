@@ -1,6 +1,7 @@
 """Run every gold query and show its result, so each answer can be verified by eye."""
 
 import argparse
+from collections import Counter
 
 import duckdb
 import pandas as pd
@@ -19,15 +20,45 @@ def load_questions() -> list[dict]:
         return yaml.safe_load(f)
 
 
+def show_summary(questions: list[dict]) -> None:
+    done = Counter()
+    total = Counter()
+
+    for q in questions:
+        total[q["category"]] += 1
+        if q.get("verified"):
+            done[q["category"]] += 1
+
+    print("\nVerification progress")
+    print("=" * 56)
+
+    for category in total:
+        n, d = done[category], total[category]
+        filled = round(15 * n / d) if d else 0
+        bar = "#" * filled + "." * (15 - filled)
+        print(f"  {category:<20} {n:>3}/{d:<3}  {bar}")
+
+    print("-" * 56)
+    n, d = sum(done.values()), sum(total.values())
+    pct = round(100 * n / d) if d else 0
+    print(f"  {'TOTAL':<20} {n:>3}/{d:<3}  {pct}%\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--id", help="run a single question, e.g. Q007")
     parser.add_argument("--category", help="run one category only")
     parser.add_argument("--unverified", action="store_true",
                         help="only questions not yet marked verified")
+    parser.add_argument("--summary", action="store_true",
+                        help="show progress without running anything")
     args = parser.parse_args()
 
     questions = load_questions()
+
+    if args.summary:
+        show_summary(questions)
+        return
 
     if args.id:
         questions = [q for q in questions if q["id"] == args.id]
@@ -64,13 +95,17 @@ def main() -> None:
             failures.append((q["id"], str(e).splitlines()[0]))
             print(f"ERROR: {e}")
 
+        if q.get("notes"):
+            print(f"\nNotes: {q['notes']}")
+
     con.close()
 
     print(f"\n{'=' * 74}")
     print(f"Ran {len(questions)} questions, {len(failures)} errored.")
     for qid, msg in failures:
         print(f"  {qid}: {msg}")
-    print()
+
+    show_summary(load_questions())
 
 
 if __name__ == "__main__":
