@@ -497,3 +497,436 @@
   notes: "735 products — 2.23% of the 32,951 catalogue. These appear only in orders that
     were never delivered (2,963 such orders, ~3,378 items). Cross-check confirms
     735 + 32,216 sold = 32,951."
+
+- id: Q031
+  category: time_series
+  question: What was the total revenue from delivered orders in each month of 2018?
+  expected_behavior: answer
+  sql: |
+    select
+        d.month_start,
+        round(sum(o.order_value), 2) as revenue,
+        count(*)                     as orders
+    from marts.fct_orders o
+    join marts.dim_dates d on o.order_date = d.date_key
+    where o.is_delivered
+      and d.year = 2018
+    group by d.month_start
+    order by d.month_start
+  verified: true
+  notes: "8 rows, Jan-Aug 2018. R$8,451,584.77 across 52,783 delivered orders — 54.8% of
+    all delivered revenue against 54.7% of delivered orders, and an average order
+    value of R$160.12 against the overall R$159.83. Only 8 months because Sept 2018
+    has 16 orders and Oct has 4, none delivered: the dataset was captured mid-October
+    2018 and those orders were still in transit."
+
+- id: Q032
+  category: time_series
+  question: How many orders were placed in each quarter, across all years?
+  expected_behavior: answer
+  sql: |
+    select
+        d.year,
+        d.quarter,
+        count(*) as orders
+    from marts.fct_orders o
+    join marts.dim_dates d on o.order_date = d.date_key
+    group by d.year, d.quarter
+    order by d.year, d.quarter
+  verified: true
+  notes: "10 rows. Sums to 99,441 exactly. 2018 Q3 (12,820) = Jul 6,292 + Aug 6,512 +
+    Sep 16, matching Q031. 2018 Q4 is the 4 October orders alone. Volume by year:
+    2016 329 (0.3%), 2017 45,101 (45.4%), 2018 54,011 (54.3%). Peak quarter is
+    2018 Q1; the decline after is the mid-October cutoff, not falling demand."
+
+- id: Q033
+  category: time_series
+  question: Which calendar month had the highest number of delivered orders?
+  expected_behavior: answer
+  sql: |
+    select
+        d.month_start,
+        count(*) as delivered_orders
+    from marts.fct_orders o
+    join marts.dim_dates d on o.order_date = d.date_key
+    where o.is_delivered
+    group by d.month_start
+    order by delivered_orders desc
+    limit 1
+  verified: true
+  notes: "2017-11-01, 7,289 delivered orders. Beats every 2018 month (highest is January
+    at 7,069) despite 2018 having higher annual volume. Almost certainly Black
+    Friday — late November is Brazil's largest e-commerce event."
+
+- id: Q034
+  category: time_series
+  question: What was the month-over-month change in delivered revenue during 2018?
+  expected_behavior: answer
+  sql: |
+    with monthly as (
+        select
+            d.month_start,
+            sum(o.order_value) as revenue
+        from marts.fct_orders o
+        join marts.dim_dates d on o.order_date = d.date_key
+        where o.is_delivered
+          and d.year = 2018
+        group by d.month_start
+    )
+    select
+        month_start,
+        round(revenue, 2)                                  as revenue,
+        round(revenue - lag(revenue) over (order by month_start), 2) as change_vs_prior,
+        round(100.0 * (revenue - lag(revenue) over (order by month_start))
+              / lag(revenue) over (order by month_start), 2)        as pct_change
+    from monthly
+    order by month_start
+  verified: true
+  notes: "8 rows, first change_vs_prior empty (no prior month). Cross-check confirms the
+    changes sum to -92,395.82 = August minus January. Revenue fell 8.6% Jan-Aug.
+    February's -10.36% is largely calendar: 28 days is 90.3% of January's 31, and
+    February revenue was 89.6% of January's."
+
+- id: Q035
+  category: time_series
+  question: How did average delivery time change month by month during 2018?
+  expected_behavior: answer
+  sql: |
+    select
+        d.month_start,
+        count(*)                         as delivered_orders,
+        round(avg(o.days_to_deliver), 2) as avg_days_to_deliver
+    from marts.fct_orders o
+    join marts.dim_dates d on o.order_date = d.date_key
+    where o.days_to_deliver is not null
+      and d.year = 2018
+    group by d.month_start
+    order by d.month_start
+  verified: true
+  notes: "Delivery time improved 14.01 to 7.66 days Jan-Aug, a 45% reduction. Weighted
+    2018 average 12.0639 against the all-time 12.4973. Row counts differ slightly
+    from Q031 because this filters on days_to_deliver rather than is_delivered:
+    Jun -3, Jul -3 (delivered with no date) and Feb +1 (dated but not delivered)."
+
+- id: Q036
+  category: time_series
+  question: What is the cumulative delivered revenue by month across the whole dataset?
+  expected_behavior: answer
+  sql: |
+    with monthly as (
+        select
+            d.month_start,
+            sum(o.order_value) as revenue
+        from marts.fct_orders o
+        join marts.dim_dates d on o.order_date = d.date_key
+        where o.is_delivered
+        group by d.month_start
+    )
+    select
+        month_start,
+        round(revenue, 2)                                              as revenue,
+        round(sum(revenue) over (order by month_start), 2)             as cumulative_revenue
+    from monthly
+    order by month_start
+  verified: true
+  notes: "Cumulative delivered revenue ends at R$15,419,773.75, matching Q003 exactly —
+    every month's revenue adds back to the total, so the date join drops nothing."
+
+- id: Q037
+  category: time_series
+  question: Are orders placed on weekends different in value from weekday orders?
+  expected_behavior: answer
+  sql: |
+    select
+        d.is_weekend,
+        count(*)                     as orders,
+        round(avg(o.order_value), 2) as avg_order_value
+    from marts.fct_orders o
+    join marts.dim_dates d on o.order_date = d.date_key
+    where o.is_delivered
+    group by d.is_weekend
+    order by d.is_weekend
+  verified: true
+  notes: "96478. Cross-check confirms the two groups sum to all delivered orders."
+
+- id: Q038
+  category: time_series
+  question: Which day of the week receives the most orders?
+  expected_behavior: answer
+  sql: |
+    select
+        d.day_name,
+        count(*) as orders
+    from marts.fct_orders o
+    join marts.dim_dates d on o.order_date = d.date_key
+    group by d.day_name
+    order by orders desc
+    limit 1
+  verified: true
+  notes: "Monday, 16,196 orders — 16.3% of all 99,441 against an even split of 14.3%.
+    Cross-check confirms day-of-week counts sum to the full total."
+
+- id: Q039
+  category: time_series
+  question: How did the average review score change year over year?
+  expected_behavior: answer
+  sql: |
+    select
+        d.year,
+        count(*)                      as reviewed_orders,
+        round(avg(o.review_score), 3) as avg_review_score
+    from marts.fct_orders o
+    join marts.dim_dates d on o.order_date = d.date_key
+    where o.review_count > 0
+    group by d.year
+    order by d.year
+  verified: true
+  notes: "98673. Cross-check confirms yearly reviewed-order counts sum to all reviewed orders."
+
+- id: Q040
+  category: time_series
+  question: What share of each month's delivered orders arrived late, during 2018?
+  expected_behavior: answer
+  sql: |
+    select
+        d.month_start,
+        count(*)                                                   as delivered_orders,
+        count(*) filter (where o.is_late)                          as late_orders,
+        round(100.0 * count(*) filter (where o.is_late) / count(*), 2) as late_pct
+    from marts.fct_orders o
+    join marts.dim_dates d on o.order_date = d.date_key
+    where o.is_delivered
+      and o.delivered_at is not null
+      and d.year = 2018
+    group by d.month_start
+    order by d.month_start
+  verified: true
+  notes: "Highly volatile: 1.36% late in June to 21.36% in March, a 16x swing. 4,944 late
+    of 52,777 delivered-and-dated orders Jan-Aug = 9.37%, above the all-time 8.11% —
+    but March alone drives that. Excluding March, 2018 runs at 7.53%, below average.
+    Feb+Mar together were 18.76% late. Something broke in Q1 2018 and recovered by June."
+
+- id: Q041
+  category: ambiguous
+  question: How did we do last month?
+  expected_behavior: clarify
+  reason: >
+    Three separate gaps. "Last month" relative to what — today, or the last month
+    in the data (October 2018)? "How did we do" by which measure — revenue, order
+    count, review scores, delivery performance? And compared to what — the prior
+    month, the same month last year, or nothing?
+  verified: true
+  notes: ""
+
+- id: Q042
+  category: ambiguous
+  question: Who are our top customers?
+  expected_behavior: clarify
+  reason: >
+    "Top" is undefined. By number of orders, by total spend, or by average order
+    value? These produce different lists: only 3.1% of customers have more than one
+    order, so ranking by order count is nearly flat while ranking by spend is not.
+  verified: true
+  notes: ""
+
+- id: Q043
+  category: ambiguous
+  question: What is our revenue?
+  expected_behavior: clarify
+  reason: >
+    Two unstated choices. Which orders count — delivered only (R$15,419,773.75), or
+    every order regardless of status (R$15,843,550)? And does revenue include
+    freight? Items alone are R$13,221,498.11 for delivered orders. Three defensible
+    answers, differing by up to 20%.
+  verified: true
+  notes: ""
+
+- id: Q044
+  category: ambiguous
+  question: Which products sell best?
+  expected_behavior: clarify
+  reason: >
+    "Best" could mean highest unit volume, highest revenue, or best reviewed, and
+    the three disagree. It is also unclear whether "products" means individual
+    products or categories — there are 32,951 of the former and 74 of the latter.
+  verified: true
+  notes: ""
+
+- id: Q045
+  category: ambiguous
+  question: How fast do we deliver?
+  expected_behavior: clarify
+  reason: >
+    Delivery time can be measured from purchase, from payment approval, or from
+    handover to the carrier — all three timestamps exist and give different answers.
+    It is also unclear whether the summary wanted is the mean, the median, or a
+    percentile, which matters because delivery times are heavily right-skewed.
+  verified: true
+  notes: ""
+
+- id: Q046
+  category: ambiguous
+  question: Which sellers are underperforming?
+  expected_behavior: clarify
+  reason: >
+    "Underperforming" has no definition in the data. Candidates include low revenue,
+    slow delivery, poor review scores, and high cancellation rate, and a seller can
+    be bad on one while fine on the others. A threshold is also needed — most of the
+    3,095 sellers are small, so almost any absolute cutoff ranks them by size rather
+    than quality.
+  verified: true
+  notes: ""
+
+- id: Q047
+  category: ambiguous
+  question: Show me recent trends
+  expected_behavior: clarify
+  reason: >
+    Neither the metric nor the window is specified. "Recent" against a dataset ending
+    in October 2018 could mean the last month, quarter, or year of data, and "trends"
+    could be revenue, volume, delivery speed, or satisfaction.
+  verified: true
+  notes: ""
+
+- id: Q048
+  category: ambiguous
+  question: What is our average order size?
+  expected_behavior: clarify
+  reason: >
+    "Size" could be money or item count. In money it is R$159.83 for delivered
+    orders; in items it is about 1.14. Both are correct answers to different
+    questions, and the phrasing does not distinguish them.
+  verified: true
+  notes: ""
+
+- id: Q049
+  category: ambiguous
+  question: Compare Sao Paulo to the rest of the country
+  expected_behavior: clarify
+  reason: >
+    "Sao Paulo" is both a state (SP) and a city within it, and the two give very
+    different splits — the state is 42.0% of orders. The comparison measure is also
+    unstated: order volume, revenue, delivery time, and review scores each tell a
+    different story.
+  verified: true
+  notes: ""
+
+- id: Q050
+  category: ambiguous
+  question: How many customers do we have?
+  expected_behavior: clarify
+  reason: >
+    The source data supports two defensible answers. There are 96,096 distinct
+    people (customer_unique_id) and 99,441 customer records (customer_id, issued per
+    order). The semantic layer standardises on the person, but the question itself
+    does not say which is wanted, and "customers" in a business context sometimes
+    means active customers over a period rather than all time.
+  verified: true
+  notes: ""
+
+- id: Q051
+  category: unanswerable
+  question: What is our profit margin by product category?
+  expected_behavior: refuse
+  reason: >
+    There is no cost data anywhere in the dataset. Olist records what customers paid,
+    not what goods cost to source, so margin cannot be computed at any grain. The
+    dangerous failure here is substituting freight for cost and calling the remainder
+    margin.
+  verified: true
+  notes: ""
+
+- id: Q052
+  category: unanswerable
+  question: How much did we spend on marketing last quarter?
+  expected_behavior: refuse
+  reason: >
+    No marketing, advertising, or spend data exists. The dataset covers orders,
+    items, payments, reviews, products, sellers and geography only.
+  verified: true
+  notes: ""
+
+- id: Q053
+  category: unanswerable
+  question: What is our customer acquisition cost?
+  expected_behavior: refuse
+  reason: >
+    Requires marketing spend divided by new customers. The denominator is available;
+    the numerator does not exist in any table.
+  verified: true
+  notes: ""
+
+- id: Q054
+  category: unanswerable
+  question: Which customers are most likely to churn next month?
+  expected_behavior: refuse
+  reason: >
+    A prediction, not a fact in the data. There is also no subscription or
+    contract concept in Olist, so "churn" is undefined — 96.9% of customers ordered
+    exactly once, which would make almost everyone churned under a naive definition.
+  verified: true
+  notes: ""
+
+- id: Q055
+  category: unanswerable
+  question: How many items do we currently have in stock?
+  expected_behavior: refuse
+  reason: >
+    No inventory data. The products table describes dimensions, weight and category;
+    it carries no stock level, and no table records warehouse state at any point in
+    time.
+  verified: true
+  notes: ""
+
+- id: Q056
+  category: unanswerable
+  question: What percentage of website visitors place an order?
+  expected_behavior: refuse
+  reason: >
+    Conversion requires traffic data. The dataset contains only completed orders —
+    there is no record of sessions, visits, or abandoned carts, so the denominator
+    does not exist.
+  verified: true
+  notes: ""
+
+- id: Q057
+  category: unanswerable
+  question: Which marketing channel brings in the highest-value customers?
+  expected_behavior: refuse
+  reason: >
+    No channel, referral, or attribution data. Orders cannot be traced to how the
+    customer arrived.
+  verified: true
+  notes: ""
+
+- id: Q058
+  category: unanswerable
+  question: What is the lifetime value of a customer over the next three years?
+  expected_behavior: refuse
+  reason: >
+    A forward-looking projection. The data covers two years of history and ends in
+    October 2018, and contains no cost or retention information to project from.
+    Historical spend per customer is computable; three-year future value is not.
+  verified: true
+  notes: ""
+
+- id: Q059
+  category: unanswerable
+  question: How many customer service tickets were raised last month?
+  expected_behavior: refuse
+  reason: >
+    No support or ticketing data. Review comments are the only free-text customer
+    contact in the dataset, and a review is not a support ticket.
+  verified: true
+  notes: ""
+
+- id: Q060
+  category: unanswerable
+  question: What is the gender breakdown of our customers?
+  expected_behavior: refuse
+  reason: >
+    No demographic data. The customer tables hold an identifier, postcode, city and
+    state, and nothing else. Inferring gender from any available field would be
+    fabrication.
+  verified: true
+  notes: ""

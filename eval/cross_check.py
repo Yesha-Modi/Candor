@@ -168,6 +168,168 @@ CHECKS = [
                          select 1 from marts.fct_order_items i
                          where i.product_key = p.product_key and i.is_delivered))""",
     },
+
+    {
+        "for": "Q031",
+        "name": "Monthly 2018 revenue sums to 2018 delivered revenue",
+        "a": """select round(sum(order_value), 2)
+                from marts.fct_orders o
+                join marts.dim_dates d on o.order_date = d.date_key
+                where o.is_delivered and d.year = 2018""",
+        "b": """with monthly as (
+                    select d.month_start, sum(o.order_value) as rev
+                    from marts.fct_orders o
+                    join marts.dim_dates d on o.order_date = d.date_key
+                    where o.is_delivered and d.year = 2018
+                    group by d.month_start
+                )
+                select round(sum(rev), 2) from monthly""",
+    },
+    {
+        "for": "Q032",
+        "name": "Quarterly order counts sum to every order",
+        "a": "select count(*) from marts.fct_orders",
+        "b": """with q as (
+                    select d.year, d.quarter, count(*) as n
+                    from marts.fct_orders o
+                    join marts.dim_dates d on o.order_date = d.date_key
+                    group by d.year, d.quarter
+                )
+                select sum(n) from q""",
+    },
+    {
+        "for": "Q033",
+        "name": "Busiest month equals the max of the monthly series",
+        "a": """select count(*)
+                from marts.fct_orders o
+                join marts.dim_dates d on o.order_date = d.date_key
+                where o.is_delivered
+                group by d.month_start
+                order by count(*) desc
+                limit 1""",
+        "b": """with monthly as (
+                    select d.month_start, count(*) as n
+                    from marts.fct_orders o
+                    join marts.dim_dates d on o.order_date = d.date_key
+                    where o.is_delivered
+                    group by d.month_start
+                )
+                select max(n) from monthly""",
+    },
+    {
+        "for": "Q034",
+        "name": "Month-over-month changes sum to the full-year swing",
+        "a": """with monthly as (
+                    select d.month_start, sum(o.order_value) as rev
+                    from marts.fct_orders o
+                    join marts.dim_dates d on o.order_date = d.date_key
+                    where o.is_delivered and d.year = 2018
+                    group by d.month_start
+                ),
+                chg as (
+                    select rev - lag(rev) over (order by month_start) as delta
+                    from monthly
+                )
+                select round(coalesce(sum(delta), 0), 2) from chg""",
+        "b": """with monthly as (
+                    select d.month_start, sum(o.order_value) as rev
+                    from marts.fct_orders o
+                    join marts.dim_dates d on o.order_date = d.date_key
+                    where o.is_delivered and d.year = 2018
+                    group by d.month_start
+                )
+                select round(
+                    (select rev from monthly order by month_start desc limit 1)
+                  - (select rev from monthly order by month_start asc  limit 1), 2)""",
+    },
+    {
+        "for": "Q035",
+        "name": "Monthly delivery times reweight to the 2018 average",
+        "a": """select round(avg(o.days_to_deliver), 4)
+                from marts.fct_orders o
+                join marts.dim_dates d on o.order_date = d.date_key
+                where o.days_to_deliver is not null and d.year = 2018""",
+        "b": """with monthly as (
+                    select d.month_start, count(*) as n, avg(o.days_to_deliver) as avg_d
+                    from marts.fct_orders o
+                    join marts.dim_dates d on o.order_date = d.date_key
+                    where o.days_to_deliver is not null and d.year = 2018
+                    group by d.month_start
+                )
+                select round(sum(n * avg_d) / sum(n), 4) from monthly""",
+    },
+    {
+        "for": "Q036",
+        "name": "Final cumulative revenue equals total delivered revenue",
+        "a": "select round(sum(order_value), 2) from marts.fct_orders where is_delivered",
+        "b": """with monthly as (
+                    select d.month_start, sum(o.order_value) as rev
+                    from marts.fct_orders o
+                    join marts.dim_dates d on o.order_date = d.date_key
+                    where o.is_delivered
+                    group by d.month_start
+                ),
+                cum as (
+                    select month_start, sum(rev) over (order by month_start) as running
+                    from monthly
+                )
+                select round(running, 2) from cum order by month_start desc limit 1""",
+    },
+    {
+        "for": "Q037",
+        "name": "Weekend plus weekday orders equals all delivered orders",
+        "a": "select count(*) from marts.fct_orders where is_delivered",
+        "b": """with split as (
+                    select d.is_weekend, count(*) as n
+                    from marts.fct_orders o
+                    join marts.dim_dates d on o.order_date = d.date_key
+                    where o.is_delivered
+                    group by d.is_weekend
+                )
+                select sum(n) from split""",
+    },
+    {
+        "for": "Q038",
+        "name": "Orders by day of week sum to every order",
+        "a": "select count(*) from marts.fct_orders",
+        "b": """with dow as (
+                    select d.day_name, count(*) as n
+                    from marts.fct_orders o
+                    join marts.dim_dates d on o.order_date = d.date_key
+                    group by d.day_name
+                )
+                select sum(n) from dow""",
+    },
+    {
+        "for": "Q039",
+        "name": "Yearly reviewed-order counts sum to all reviewed orders",
+        "a": "select count(*) from marts.fct_orders where review_count > 0",
+        "b": """with yearly as (
+                    select d.year, count(*) as n
+                    from marts.fct_orders o
+                    join marts.dim_dates d on o.order_date = d.date_key
+                    where o.review_count > 0
+                    group by d.year
+                )
+                select sum(n) from yearly""",
+    },
+    {
+        "for": "Q040",
+        "name": "Monthly late counts sum to all 2018 late orders",
+        "a": """select count(*)
+                from marts.fct_orders o
+                join marts.dim_dates d on o.order_date = d.date_key
+                where o.is_delivered and o.delivered_at is not null
+                  and o.is_late and d.year = 2018""",
+        "b": """with monthly as (
+                    select d.month_start, count(*) filter (where o.is_late) as late
+                    from marts.fct_orders o
+                    join marts.dim_dates d on o.order_date = d.date_key
+                    where o.is_delivered and o.delivered_at is not null and d.year = 2018
+                    group by d.month_start
+                )
+                select sum(late) from monthly""",
+    },
 ]
 
 
