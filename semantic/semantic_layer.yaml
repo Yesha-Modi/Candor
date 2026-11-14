@@ -1,0 +1,350 @@
+# CANDOR semantic layer
+#
+# Everything the agent is allowed to know about this business. It composes
+# answers from the metrics and dimensions defined here, not from raw columns.
+#
+# Every metric is validated by eval/validate_semantic.py before use.
+
+version: 1
+
+tables:
+
+  - name: marts.fct_orders
+    grain: One row per order (99,441)
+    role: fact
+    description: >
+      Orders placed, with money, delivery timing and review summaries already
+      aggregated to order level. Use this for anything counted per order.
+
+  - name: marts.fct_order_items
+    grain: One row per line item (112,650)
+    role: fact
+    description: >
+      Individual items within orders. Finer detail than fct_orders. Joining the
+      two multiplies order rows by their item count, so never sum an order-level
+      column after joining them.
+
+  - name: marts.dim_customers
+    grain: One row per person (96,096)
+    role: dimension
+    description: >
+      People, keyed on customer_unique_id. NOT one row per order — the source
+      customers table issues a new id for every order.
+
+  - name: marts.dim_products
+    grain: One row per product (32,951)
+    role: dimension
+
+  - name: marts.dim_sellers
+    grain: One row per seller (3,095)
+    role: dimension
+
+  - name: marts.dim_dates
+    grain: One row per calendar day (1,096, covering 2016-2018)
+    role: dimension
+    description: >
+      Join here for month, quarter and weekday grouping rather than computing
+      dates inline.
+
+joins:
+
+  - from: marts.fct_orders
+    to: marts.dim_customers
+    condition: "{from}.customer_key = {to}.customer_key"
+    cardinality: many_to_one
+
+  - from: marts.fct_orders
+    to: marts.dim_dates
+    condition: "{from}.order_date = {to}.date_key"
+    cardinality: many_to_one
+
+  - from: marts.fct_order_items
+    to: marts.fct_orders
+    condition: "{from}.order_key = {to}.order_key"
+    cardinality: many_to_one
+    warning: >
+      Fan-out. An order appears once per item. Count orders with
+      count(distinct order_key) and never sum an order-level column here.
+
+  - from: marts.fct_order_items
+    to: marts.dim_products
+    condition: "{from}.product_key = {to}.product_key"
+    cardinality: many_to_one
+
+  - from: marts.fct_order_items
+    to: marts.dim_sellers
+    condition: "{from}.seller_key = {to}.seller_key"
+    cardinality: many_to_one
+
+  - from: marts.fct_order_items
+    to: marts.dim_customers
+    condition: "{from}.customer_key = {to}.customer_key"
+    cardinality: many_to_one
+    note: >
+      customer_key is copied onto the item table, so product-level customer
+      questions need no join through fct_orders.
+
+  - from: marts.fct_order_items
+    to: marts.dim_dates
+    condition: "{from}.order_date = {to}.date_key"
+    cardinality: many_to_one
+
+metrics:
+
+  - name: order_count
+    label: Orders
+    expression: count(*)
+    table: marts.fct_orders
+    additive: true
+    synonyms: [orders, number of orders, how many orders, order volume]
+    description: Every order placed, regardless of status.
+
+  - name: delivered_order_count
+    label: Delivered orders
+    expression: count(*)
+    table: marts.fct_orders
+    filters: ["is_delivered"]
+    additive: true
+    synonyms: [delivered orders, completed orders, fulfilled orders]
+    description: Orders with status 'delivered' (96,478 of 99,441).
+
+  - name: cancelled_order_count
+    label: Cancelled orders
+    expression: count(*)
+    table: marts.fct_orders
+    filters: ["is_cancelled"]
+    additive: true
+    synonyms: [cancelled orders, canceled orders, failed orders]
+    description: Status 'canceled' or 'unavailable' (1,234).
+
+  - name: revenue
+    label: Revenue
+    expression: round(sum(order_value), 2)
+    table: marts.fct_orders
+    filters: ["is_delivered"]
+    additive: true
+    synonyms: [revenue, sales, total sales, turnover, money, how much we made]
+    description: >
+      Value of delivered orders including freight. This is the DEFAULT for any
+      revenue question.
+    ambiguity: >
+      "Revenue" has three defensible readings here and they differ by up to 20%.
+      Delivered with freight (this metric), delivered items only (item_revenue),
+      or all orders regardless of status. If the question does not say which,
+      ASK rather than assuming.
+
+  - name: item_revenue
+    label: Item revenue
+    expression: round(sum(item_price), 2)
+    table: marts.fct_order_items
+    filters: ["is_delivered"]
+    additive: true
+    synonyms: [merchandise value, product revenue, revenue excluding shipping]
+    description: >
+      Value of delivered items, excluding freight. Use when the question is about
+      products or categories, since freight is not attributable to a product.
+
+  - name: freight_cost
+    label: Freight
+    expression: round(sum(freight_value), 2)
+    table: marts.fct_orders
+    filters: ["is_delivered"]
+    additive: true
+    synonyms: [shipping, freight, delivery cost, postage]
+    description: Freight charged on delivered orders.
+
+  - name: average_order_value
+    label: Average order value
+    expression: round(avg(order_value), 2)
+    table: marts.fct_orders
+    filters: ["is_delivered"]
+    additive: false
+    synonyms: [AOV, average order value, average basket, typical order]
+    description: Mean value of a delivered order, including freight.
+    ambiguity: >
+      "Order size" may mean money or item count. If the question says "size"
+      rather than "value", ASK which is wanted.
+
+  - name: customer_count
+    label: Customers
+    expression: count(*)
+    table: marts.dim_customers
+    additive: true
+    synonyms: [customers, how many customers, buyers, people]
+    description: >
+      Distinct people (96,096). NOT the 99,441 customer records in the source,
+      which are issued per order.
+
+  - name: repeat_customer_count
+    label: Repeat customers
+    expression: count(*)
+    table: marts.dim_customers
+    filters: ["is_repeat_customer"]
+    additive: true
+    synonyms: [repeat customers, returning customers, loyal customers]
+    description: People with more than one order (2,997, about 3.1%).
+
+  - name: average_review_score
+    label: Average review score
+    expression: round(avg(review_score), 3)
+    table: marts.fct_orders
+    filters: ["review_count > 0"]
+    additive: false
+    synonyms: [review score, rating, satisfaction, stars, customer satisfaction]
+    description: Mean review score, 1 to 5, over orders that received a review.
+
+  - name: average_delivery_days
+    label: Average delivery time
+    expression: round(avg(days_to_deliver), 2)
+    table: marts.fct_orders
+    filters: ["days_to_deliver is not null"]
+    additive: false
+    synonyms: [delivery time, how fast we deliver, shipping speed, days to deliver]
+    description: >
+      Mean days from purchase to delivery. Excludes the 8 orders marked delivered
+      with no delivery date.
+    ambiguity: >
+      Delivery time can be measured from purchase, approval, or carrier handover.
+      This metric uses purchase. If the question implies a different start point,
+      ASK.
+
+  - name: late_delivery_rate
+    label: Late delivery rate
+    expression: round(100.0 * count(*) filter (where is_late) / count(*), 2)
+    table: marts.fct_orders
+    filters: ["is_delivered", "delivered_at is not null"]
+    additive: false
+    synonyms: [late rate, late deliveries, missed estimates, on-time performance]
+    description: >
+      Percentage of delivered orders arriving after the estimated date.
+      All-time 8.11%.
+
+  - name: items_sold
+    label: Items sold
+    expression: count(*)
+    table: marts.fct_order_items
+    filters: ["is_delivered"]
+    additive: true
+    synonyms: [items sold, units, quantity, how many items]
+    description: Line items in delivered orders (about 109,000).
+
+  - name: average_item_price
+    label: Average item price
+    expression: round(avg(item_price), 2)
+    table: marts.fct_order_items
+    filters: ["is_delivered"]
+    additive: false
+    synonyms: [item price, average price, typical price, price per item]
+    description: Mean price of a delivered line item, excluding freight.
+
+dimensions:
+
+  - name: customer_state
+    column: customer_state
+    table: marts.dim_customers
+    synonyms: [state, customer state, region, where customers are]
+    description: Two-letter Brazilian state code. SP is 42% of orders.
+
+  - name: customer_city
+    column: customer_city
+    table: marts.dim_customers
+    synonyms: [city, customer city, town]
+
+  - name: product_category
+    column: category
+    table: marts.dim_products
+    synonyms: [category, product category, product type, department]
+    description: >
+      English category name, or the Portuguese name where no translation exists,
+      or 'unknown' where the source has no category (610 products).
+
+  - name: seller_state
+    column: seller_state
+    table: marts.dim_sellers
+    synonyms: [seller state, where sellers are, seller region]
+
+  - name: month
+    column: month_start
+    table: marts.dim_dates
+    synonyms: [month, monthly, by month, per month]
+    description: >
+      First day of the month, as a date. Group by this rather than month_name so
+      results sort chronologically and years stay distinct.
+
+  - name: quarter
+    column: quarter_start
+    table: marts.dim_dates
+    synonyms: [quarter, quarterly, Q1, Q2, Q3, Q4]
+
+  - name: year
+    column: year
+    table: marts.dim_dates
+    synonyms: [year, yearly, annual, per year]
+
+  - name: day_of_week
+    column: day_name
+    table: marts.dim_dates
+    synonyms: [day of week, weekday, which day]
+
+  - name: is_weekend
+    column: is_weekend
+    table: marts.dim_dates
+    synonyms: [weekend, weekday vs weekend]
+
+not_available:
+
+  - topic: cost, profit, margin
+    reason: No cost data exists. Only what customers paid is recorded.
+    synonyms: [profit, margin, cost, COGS, profitability, markup]
+
+  - topic: marketing spend, advertising, attribution
+    reason: No marketing, channel or campaign data exists.
+    synonyms: [marketing, advertising, CAC, acquisition cost, channel, campaign]
+
+  - topic: website traffic, sessions, conversion
+    reason: Only completed orders are recorded. No visits or abandoned carts.
+    synonyms: [traffic, visitors, sessions, conversion rate, bounce, funnel]
+
+  - topic: inventory, stock levels
+    reason: The products table has dimensions and category, no stock.
+    synonyms: [stock, inventory, warehouse, availability, out of stock]
+
+  - topic: customer demographics
+    reason: Customers have an id, postcode, city and state. Nothing else.
+    synonyms: [age, gender, income, demographics, occupation]
+
+  - topic: support tickets, customer service contacts
+    reason: Review comments are the only customer free text. A review is not a ticket.
+    synonyms: [tickets, support, complaints desk, service requests, helpdesk]
+
+  - topic: future predictions
+    reason: >
+      The data ends mid-October 2018 and describes what happened. Forecasts,
+      churn probability and projected lifetime value are not queryable facts.
+    synonyms: [forecast, predict, will, next month, next year, churn risk, projected]
+
+caveats:
+
+  - name: censored_tail
+    text: >
+      Orders exist through mid-October 2018 but the last two months are nearly
+      empty — 16 orders in September and 4 in October, none delivered. Any
+      question about "recent" or "last month" is reading almost no data. Trend
+      lines should stop at August 2018.
+
+  - name: customer_grain
+    text: >
+      A customer is a person (customer_unique_id, 96,096), not an order-level
+      customer record (99,441). Never count customers from fct_orders.
+
+  - name: review_grain
+    text: >
+      A review can cover several orders (789 do) and an order can have several
+      reviews (551 do). review_score on fct_orders is the average per order.
+
+  - name: fan_out
+    text: >
+      fct_order_items is finer than fct_orders. Joining them multiplies order
+      rows by item count — about 14% more rows, but 28% more money, because
+      larger orders have more items. Use count(distinct order_key) and never sum
+      an order-level column after this join.
