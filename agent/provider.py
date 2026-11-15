@@ -17,6 +17,10 @@ load_dotenv()
 
 TIMEOUT_MS = 30_000
 API_VERSION = "v1beta"
+
+# The model, in one place. GEMINI_MODEL in .env overrides it, so a saturated
+# default does not mean editing code or passing --model on every command.
+DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 MAX_OUTPUT_TOKENS = 2048
 
 # 503 "high demand" is normal on a free tier. Retry it, with a bound you can
@@ -36,7 +40,7 @@ class Provider(Protocol):
 class GeminiProvider:
     """Google AI Studio. Free tier, no card required."""
 
-    def __init__(self, model: str = "gemini-3.8-flash") -> None:
+    def __init__(self, model: str | None = None) -> None:
         from google import genai
         from google.genai import types
 
@@ -61,8 +65,10 @@ class GeminiProvider:
                 ),
             ),
         )
-        self.model = model
-        self.name = f"gemini/{model}"
+        # Precedence: --model on the command line, then GEMINI_MODEL in .env,
+        # then the pinned default above.
+        self.model = model or DEFAULT_MODEL
+        self.name = f"gemini/{self.model}"
 
     def generate(self, prompt: str) -> tuple[AgentResponse, dict]:
         started = time.perf_counter()

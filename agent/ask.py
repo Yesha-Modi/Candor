@@ -2,6 +2,7 @@
 
     python -m agent.ask "What is our revenue?"
     python -m agent.ask "What is our profit margin?" --show-prompt
+    python -m agent.ask "Which category sells most?" --no-run
 """
 
 import argparse
@@ -10,7 +11,8 @@ import duckdb
 import pandas as pd
 
 from src.config import DB_PATH
-from agent.prompt import build_prompt
+from agent.guard import allowed_tables_from_layer, validate_sql
+from agent.prompt import build_prompt, load_layer
 from agent.provider import get_provider
 from agent.schema import validate_shape
 
@@ -28,7 +30,10 @@ def main() -> None:
                         help="generate the SQL but do not execute it")
     args = parser.parse_args()
 
-    prompt = build_prompt(args.question)
+    # Loaded once, used twice: the prompt tells the model which tables exist,
+    # and the guard decides which tables are permitted. One file, one truth.
+    layer = load_layer()
+    prompt = build_prompt(args.question, layer)
 
     if args.show_prompt:
         print(prompt)
@@ -62,8 +67,17 @@ def main() -> None:
             print(f"Metrics: {', '.join(response.metrics_used)}")
         print(f"\n{response.sql}\n")
 
-        if args.no_run:
-            print("(not executed)")
+        # The guard runs before anything reaches the database, and there is no
+        # flag to skip it. A safety check with an off switch is a safety check
+        # someone eventually forgets to turn on.
+        blocked = validate_sql(response.sql, allowed_tables_from_layer(layer))
+
+        if blocked:
+            print("BLOCKED BY GUARD — not executed:")
+            for b in blocked:
+                print(f"  - {b}")
+        elif args.no_run:
+            print("(passed the guard, not executed)")
         else:
             con = duckdb.connect(str(DB_PATH), read_only=True)
             try:
