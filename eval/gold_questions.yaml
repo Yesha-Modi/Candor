@@ -28,9 +28,7 @@
     from marts.fct_orders
     where is_delivered
   verified: true
-  notes: "R$15,419,773.75. Cross-check from fct_order_items matches exactly. Also equals
-    delivered item revenue (R$13,221,498.11) + delivered freight (R$2,198,275.64)
-    to the cent."
+  notes: "R$15,419,773.75. Cross-check from fct_order_items matches exactly. Also equals delivered item revenue (R$13,221,498.11) + delivered freight (R$2,198,275.64) to the cent."
 
 - id: Q004
   category: simple_aggregate
@@ -73,8 +71,7 @@
     from marts.fct_orders
     where review_count > 0
   verified: true
-  notes: "4.087. Cross-check recomputed from staging.stg_order_reviews matches.
-    Consistent with Q017, where the worst categories sit at 3.6-3.9."
+  notes: "4.087. Cross-check recomputed from staging.stg_order_reviews matches. Consistent with Q017, where the worst categories sit at 3.6-3.9."
 
 - id: Q008
   category: simple_aggregate
@@ -96,8 +93,7 @@
     from marts.fct_orders
     where days_to_deliver is not null
   verified: true
-  notes: "12.4973 days. Cross-check recomputed with date_diff from the original
-    timestamps matches."
+  notes: "12.4973 days. Cross-check recomputed with date_diff from the original timestamps matches."
 
 - id: Q010
   category: simple_aggregate
@@ -106,9 +102,10 @@
   sql: |
     select count(*) as late_orders
     from marts.fct_orders
-    where is_late
+    where is_delivered
+      and is_late
   verified: true
-  notes: "7,827. Cross-check matches a direct delivered_at > estimated_delivery_at comparison."
+  notes: "7,827. Cross-check matches a direct delivered_at > estimated_delivery_at comparison. Gold corrected in Session 10: the question says DELIVERED orders; the gold counted all late orders, including the one late order that was never delivered (7827 vs 7826). The agent was right and the gold was wrong."
 
 - id: Q011
   category: simple_aggregate
@@ -139,24 +136,20 @@
     from marts.fct_orders
     where is_delivered
   verified: true
-  notes: "R$2,198,275.64 — 14.26% of delivered order value. Cross-check from
-    fct_order_items matches exactly."
+  notes: "R$2,198,275.64 — 14.26% of delivered order value. Cross-check from fct_order_items matches exactly."
 
 - id: Q014
   category: simple_aggregate
   question: What share of delivered orders arrived late?
   expected_behavior: answer
   sql: |
-    select
-      count(*) filter (where is_delivered)                               as delivered,
-      count(*) filter (where is_delivered and delivered_at is not null)  as delivered_with_date,
-      count(*) filter (where is_late)                                    as late,
-      count(*) filter (where is_late and not is_delivered)               as late_but_not_delivered
+    select round(100.0 * count(*) filter (where is_late) / count(*), 2)
+               as late_pct
     from marts.fct_orders
+    where is_delivered
+      and delivered_at is not null
   verified: true
-  notes: "8.1124% — 7,826 late orders over 96,470 delivered-with-a-date. Note the
-    numerator is 7,826, not Q010's 7,827: one late order does not have
-    delivered status."
+  notes: "8.1124% — 7,826 late orders over 96,470 delivered-with-a-date. Note the numerator is 7,826, not Q010's 7,827: one late order does not have delivered status. Gold corrected in Session 10: the gold was the four-column diagnostic from Session 5, not an answer. The question asks for a share, which is one number."
 
 - id: Q015
   category: simple_aggregate
@@ -167,9 +160,7 @@
     from marts.fct_orders
     where item_count > 1
   verified: true
-  notes: "9,803 orders (9.9% of the 98,666 with items). Cross-check recounted from
-    fct_order_items matches. Implies 13,984 extra items spread over those orders,
-    about 1.43 extra each."
+  notes: "9,803 orders (9.9% of the 98,666 with items). Cross-check recounted from fct_order_items matches. Implies 13,984 extra items spread over those orders, about 1.43 extra each."
 
 - id: Q016
   category: multi_table_join
@@ -178,19 +169,19 @@
   sql: |
     select
         p.category,
-        round(sum(i.item_price), 2) as revenue
+        round(sum(i.item_price), 2) as item_revenue
     from marts.fct_order_items i
     join marts.dim_products p on i.product_key = p.product_key
     where i.is_delivered
     group by p.category
-    order by revenue desc
+    order by item_revenue desc
     limit 1
   verified: true
-  notes: "health_beauty, R$1,233,131.72. Still first when freight is included, so the answer is robust."
+  notes: "health_beauty, R$1,233,131.72. Still first when freight is included, so the answer is robust. Gold corrected in Session 10: renamed the output column from `revenue` to `item_revenue`: the gold had the same mislabelling the agent was flagged for in Session 8."
 
 - id: Q017
   category: multi_table_join
-  question: Which five product categories have the lowest average review score?
+  question: Which five product categories have the lowest average review score, among categories with at least 100 reviewed orders?
   expected_behavior: answer
   sql: |
     with order_categories as (
@@ -202,8 +193,7 @@
     )
     select
         oc.category,
-        round(avg(o.review_score), 3) as avg_review_score,
-        count(*)                      as orders
+        round(avg(o.review_score), 3) as avg_review_score
     from order_categories oc
     join marts.fct_orders o on oc.order_key = o.order_key
     where o.review_count > 0
@@ -212,11 +202,7 @@
     order by avg_review_score asc
     limit 5
   verified: true
-  notes: "office_furniture 3.616 (1,263 orders), fashion_male_clothing 3.703,
-    audio 3.834, construction_tools_safety 3.849, home_confort 3.863.
-    FIXED before verifying: original averaged review_score after joining items,
-    over-weighting multi-item orders, and had no minimum size so a 2-order
-    category topped the list. office_furniture was 3.489 under the buggy version."
+  notes: "office_furniture 3.616 (1,263 orders), fashion_male_clothing 3.703, audio 3.834, construction_tools_safety 3.849, home_confort 3.863. FIXED before verifying: original averaged review_score after joining items, over-weighting multi-item orders, and had no minimum size so a 2-order category topped the list. office_furniture was 3.489 under the buggy version. Gold corrected in Session 10: dropped `orders` and stated the threshold in the question."
 
 - id: Q018
   category: multi_table_join
@@ -232,8 +218,7 @@
     order by orders desc
     limit 1
   verified: true
-  notes: "SP, 41,752 orders — 42.0% of all 99,441. Cross-check confirms orders per
-    state sums back to the total."
+  notes: "SP, 41,752 orders — 42.0% of all 99,441. Cross-check confirms orders per state sums back to the total."
 
 - id: Q019
   category: multi_table_join
@@ -242,19 +227,15 @@
   sql: |
     select
         c.customer_state,
-        count(*)                         as delivered_orders,
         round(avg(o.days_to_deliver), 2) as avg_days_to_deliver
     from marts.fct_orders o
     join marts.dim_customers c on o.customer_key = c.customer_key
     where o.days_to_deliver is not null
     group by c.customer_state
-    order by delivered_orders desc
+    order by count(*) desc
     limit 10
   verified: true
-  notes: "SP fastest at 8.70 days (40,500 orders), BA slowest at 19.28. Top 10 states
-    cover 87,302 of 96,476 delivered orders (90.5%), weighted average 11.69 days
-    against an overall 12.50 — implying ~20 days for the remaining 17 states.
-    SP's delivered rate of 97.0% matches the overall rate exactly."
+  notes: "SP fastest at 8.70 days (40,500 orders), BA slowest at 19.28. Top 10 states cover 87,302 of 96,476 delivered orders (90.5%), weighted average 11.69 days against an overall 12.50 — implying ~20 days for the remaining 17 states. SP's delivered rate of 97.0% matches the overall rate exactly. Gold corrected in Session 10: dropped `delivered_orders`: it selects the ten states but is not part of the answer, and ordering by count(*) does not require selecting it."
 
 - id: Q020
   category: multi_table_join
@@ -263,18 +244,15 @@
   sql: |
     select
         s.seller_key,
-        s.seller_state,
-        round(sum(i.item_price), 2) as revenue
+        round(sum(i.item_price), 2) as item_revenue
     from marts.fct_order_items i
     join marts.dim_sellers s on i.seller_key = s.seller_key
     where i.is_delivered
-    group by s.seller_key, s.seller_state
-    order by revenue desc
+    group by s.seller_key
+    order by item_revenue desc
     limit 1
   verified: true
-  notes: "Seller 4869f7a5dfa277a7dca6462dcf3b52b2 (SP), R$226,987.93 — 1.72% of total
-    delivered item revenue, 53x the average across 3,095 sellers. Long-tail
-    distribution as expected for a marketplace."
+  notes: "Seller 4869f7a5dfa277a7dca6462dcf3b52b2 (SP), R$226,987.93 — 1.72% of total delivered item revenue, 53x the average across 3,095 sellers. Long-tail distribution as expected for a marketplace. Gold corrected in Session 10: dropped `seller_state`, which the question does not ask for."
 
 - id: Q021
   category: multi_table_join
@@ -283,18 +261,15 @@
   sql: |
     select
         i.seller_key,
-        count(distinct p.category)  as categories,
-        round(sum(i.item_price), 2) as revenue
+        count(distinct p.category) as categories
     from marts.fct_order_items i
     join marts.dim_products p on i.product_key = p.product_key
     where i.is_delivered
     group by i.seller_key
-    order by revenue desc
+    order by sum(i.item_price) desc
     limit 5
   verified: true
-  notes: "Top seller 4869f7a5... matches Q020 exactly (R$226,987.93) — free cross-check.
-    Category breadth varies widely at the same revenue level: #1 sells 10 categories,
-    #2 sells only 2. Revenue clustered within 22% across the top five."
+  notes: "Top seller 4869f7a5... matches Q020 exactly (R$226,987.93) — free cross-check. Category breadth varies widely at the same revenue level: #1 sells 10 categories, #2 sells only 2. Revenue clustered within 22% across the top five. Gold corrected in Session 10: dropped `revenue`: it ranks the sellers but is not the answer to 'how many categories'."
 
 - id: Q022
   category: multi_table_join
@@ -303,7 +278,6 @@
   sql: |
     select
         p.category,
-        count(*)                    as items_sold,
         round(avg(i.item_price), 2) as avg_item_price
     from marts.fct_order_items i
     join marts.dim_products p on i.product_key = p.product_key
@@ -312,14 +286,11 @@
     having count(*) >= 500
     order by avg_item_price desc
   verified: true
-  notes: "28 categories at 500+ delivered items, R$283.13 (musical_instruments) down to
-    R$56.81 (electronics). Cross-checks against Q016: items_sold x avg_item_price
-    reproduces each category's revenue to the rounding. Covers 102,802 items, ~94%
-    of delivered items. 'unknown' appears with 1,537 items, as intended by D12."
+  notes: "28 categories at 500+ delivered items, R$283.13 (musical_instruments) down to R$56.81 (electronics). Cross-checks against Q016: items_sold x avg_item_price reproduces each category's revenue to the rounding. Covers 102,802 items, ~94% of delivered items. 'unknown' appears with 1,537 items, as intended by D12. Gold corrected in Session 10: dropped `items_sold`: it is the HAVING threshold, already stated in the question, not a requested output."
 
 - id: Q023
   category: multi_table_join
-  question: Which product categories do repeat customers buy most often?
+  question: Which ten product categories do repeat customers buy most often?
   expected_behavior: answer
   sql: |
     select
@@ -334,12 +305,7 @@
     order by items_bought desc
     limit 10
   verified: true
-  notes: "bed_bath_table 1,098 items, then furniture_decor 810, sports_leisure 662.
-    Repeat customers are 3.12% of people but 7.57% of delivered items in these
-    categories — ~2.4x their share. Against that baseline, fashion_bags_accessories
-    over-indexes 1.72x and bed_bath_table 1.32x, while telephony (0.67x) and
-    watches_gifts (0.72x) under-index. Counts items, not orders — 'most often' is
-    interpreted as item volume."
+  notes: "bed_bath_table 1,098 items, then furniture_decor 810, sports_leisure 662. Repeat customers are 3.12% of people but 7.57% of delivered items in these categories — ~2.4x their share. Against that baseline, fashion_bags_accessories over-indexes 1.72x and bed_bath_table 1.32x, while telephony (0.67x) and watches_gifts (0.72x) under-index. Counts items, not orders — 'most often' is interpreted as item volume. Gold corrected in Session 10: the gold had `limit 10` while the question named no number, so the agent's 71 rows were defensible. Pinned the count in the question rather than removing the limit, because a 'most often' ranking over all 71 categories is not what the question is for."
 
 - id: Q024
   category: multi_table_join
@@ -352,19 +318,17 @@
     join marts.dim_customers c on i.customer_key = c.customer_key
     where s.seller_state <> c.customer_state
   verified: true
-  notes: "63,308 orders — 64.2% of the 98,666 orders that have items. Implies 35,358
-    same-state-only orders. Checked for null states on both sides (zero on each),
-    so the <> comparison isn't silently excluding rows."
+  notes: "63,308 orders — 64.2% of the 98,666 orders that have items. Implies 35,358 same-state-only orders. Checked for null states on both sides (zero on each), so the <> comparison isn't silently excluding rows."
 
 - id: Q025
   category: multi_table_join
-  question: What is the average freight cost as a share of item price, by product category?
+  question: What is the average freight cost as a share of item price, by product category, among categories with at least 100 delivered items?
   expected_behavior: answer
   sql: |
     select
         p.category,
-        round(100.0 * sum(i.freight_price) / sum(i.item_price), 2) as freight_pct_of_price,
-        count(*) as items
+        round(100.0 * sum(i.freight_price) / sum(i.item_price), 2)
+            as freight_pct_of_price
     from marts.fct_order_items i
     join marts.dim_products p on i.product_key = p.product_key
     where i.is_delivered
@@ -373,20 +337,15 @@
     having count(*) >= 100
     order by freight_pct_of_price desc
   verified: true
-  notes: "4.42% (computers) to 36.52% (christmas_supplies) across 52 categories at 100+
-    items. All 8 overlapping values match the Q016 freight spot-check exactly;
-    item counts match Q022 exactly. Freight share tracks inversely with average
-    item price — cheap bulky goods ship expensively as a share of value.
-    office_furniture (R$161, 25.01%) is the sensible exception: expensive and bulky."
+  notes: "4.42% (computers) to 36.52% (christmas_supplies) across 52 categories at 100+ items. All 8 overlapping values match the Q016 freight spot-check exactly; item counts match Q022 exactly. Freight share tracks inversely with average item price — cheap bulky goods ship expensively as a share of value. office_furniture (R$161, 25.01%) is the sensible exception: expensive and bulky. Gold corrected in Session 10: dropped `items` and stated the threshold in the question."
 
 - id: Q026
   category: multi_table_join
-  question: Which five cities have the highest average order value among delivered orders?
+  question: Which five cities have the highest average order value among delivered orders, counting only cities with at least 100 delivered orders?
   expected_behavior: answer
   sql: |
     select
         c.customer_city,
-        count(*)                     as orders,
         round(avg(o.order_value), 2) as avg_order_value
     from marts.fct_orders o
     join marts.dim_customers c on o.customer_key = c.customer_key
@@ -396,11 +355,7 @@
     order by avg_order_value desc
     limit 5
   verified: true
-  notes: "divinopolis R$290.69 (132 orders) down to maceio R$218.74 (236), all 1.4-1.8x
-    the ~R$160 average delivered order. All five are far from Sao Paulo — order_value
-    includes freight, so this partly measures distance from sellers rather than
-    customer spending. Worth splitting items_value from freight_value if the
-    question is really about basket size."
+  notes: "divinopolis R$290.69 (132 orders) down to maceio R$218.74 (236), all 1.4-1.8x the ~R$160 average delivered order. All five are far from Sao Paulo — order_value includes freight, so this partly measures distance from sellers rather than customer spending. Worth splitting items_value from freight_value if the question is really about basket size. Gold corrected in Session 10: dropped `orders`, and put the 100-order threshold into the question. Without it the top five cities are whichever had one expensive order, so the gold was answering a question it had not asked."
 
 - id: Q027
   category: multi_table_join
@@ -411,23 +366,18 @@
         p.category,
         count(distinct o.order_key) as one_star_orders
     from marts.fct_orders o
-    join marts.fct_order_items i on o.order_key  = i.order_key
-    join marts.dim_products   p on i.product_key = p.product_key
+    join marts.fct_order_items i on o.order_key = i.order_key
+    join marts.dim_products p on i.product_key = p.product_key
     where o.is_delivered
       and o.worst_review_score = 1
     group by p.category
     order by one_star_orders desc
-    limit 10
   verified: true
-  notes: "bed_bath_table 1,111 one-star orders, then health_beauty 778, computers_accessories
-    739. Uses count(distinct order_key), so no fan-out. Ranking largely tracks category
-    size — normalised by delivered items the rates sit in a narrow 7.3%-10.1% band
-    (bed_bath_table 1.14x the baseline, housewares 0.82x). A raw count answers the
-    question asked but mostly measures category volume, not quality."
+  notes: "bed_bath_table 1,111 one-star orders, then health_beauty 778, computers_accessories 739. Uses count(distinct order_key), so no fan-out. Ranking largely tracks category size — normalised by delivered items the rates sit in a narrow 7.3%-10.1% band (bed_bath_table 1.14x the baseline, housewares 0.82x). A raw count answers the question asked but mostly measures category volume, not quality. Gold corrected in Session 10: removed `limit 10`: 'broken down by product category' asks for every category, not the top ten. The agent's 72 rows were right."
 
 - id: Q028
   category: multi_table_join
-  question: Which seller states have the worst average delivery time?
+  question: Which seller states have the worst average delivery time, among states with at least 100 delivered orders?
   expected_behavior: answer
   sql: |
     with order_sellers as (
@@ -439,7 +389,6 @@
     )
     select
         os.seller_state,
-        count(*)                         as orders,
         round(avg(o.days_to_deliver), 2) as avg_days_to_deliver
     from order_sellers os
     join marts.fct_orders o on os.order_key = o.order_key
@@ -448,13 +397,7 @@
     having count(*) >= 100
     order by avg_days_to_deliver desc
   verified: true
-  notes: "MA 17.64 days (389 orders) down to RS 11.44 (1,962). Weighted average 12.47
-    against the known overall 12.50 — gap is the small states dropped by the
-    having clause. Rows sum to 96,725 vs 96,476 delivered orders: not fan-out,
-    an order shipping from two states appears under both, so ~249 orders (0.26%)
-    are multi-state. SP sellers 12.29 days across 71% of pairs, while Q019 shows
-    SP customers at 8.70 — proximity to sellers matters more than being one.
-    FIXED before verifying: original averaged days_to_deliver after joining items."
+  notes: "MA 17.64 days (389 orders) down to RS 11.44 (1,962). Weighted average 12.47 against the known overall 12.50 — gap is the small states dropped by the having clause. Rows sum to 96,725 vs 96,476 delivered orders: not fan-out, an order shipping from two states appears under both, so ~249 orders (0.26%) are multi-state. SP sellers 12.29 days across 71% of pairs, while Q019 shows SP customers at 8.70 — proximity to sellers matters more than being one. FIXED before verifying: original averaged days_to_deliver after joining items. Gold corrected in Session 10: dropped `orders` and stated the threshold in the question."
 
 - id: Q029
   category: multi_table_join
@@ -473,12 +416,7 @@
     order by revenue desc
     limit 10
   verified: true
-  notes: "All ten combinations are SP. Cross-checks against Q016: SP share per category
-    runs 34.2%-46.2%, mean 39.2%, against SP's 42.0% share of all orders.
-    Heavier-freight categories are more SP-concentrated (bed_bath_table 46.2% at
-    19.7% freight; watches_gifts 36.1% at 8.4%) — bulky goods stay local.
-    Note the top-10 is entirely SP, so the question mainly shows SP dominance
-    rather than anything about category-state fit."
+  notes: "All ten combinations are SP. Cross-checks against Q016: SP share per category runs 34.2%-46.2%, mean 39.2%, against SP's 42.0% share of all orders. Heavier-freight categories are more SP-concentrated (bed_bath_table 46.2% at 19.7% freight; watches_gifts 36.1% at 8.4%) — bulky goods stay local. Note the top-10 is entirely SP, so the question mainly shows SP dominance rather than anything about category-state fit."
 
 - id: Q030
   category: multi_table_join
@@ -494,9 +432,7 @@
           and i.is_delivered
     )
   verified: true
-  notes: "735 products — 2.23% of the 32,951 catalogue. These appear only in orders that
-    were never delivered (2,963 such orders, ~3,378 items). Cross-check confirms
-    735 + 32,216 sold = 32,951."
+  notes: "735 products — 2.23% of the 32,951 catalogue. These appear only in orders that were never delivered (2,963 such orders, ~3,378 items). Cross-check confirms 735 + 32,216 sold = 32,951."
 
 - id: Q031
   category: time_series
@@ -505,8 +441,7 @@
   sql: |
     select
         d.month_start,
-        round(sum(o.order_value), 2) as revenue,
-        count(*)                     as orders
+        round(sum(o.order_value), 2) as revenue
     from marts.fct_orders o
     join marts.dim_dates d on o.order_date = d.date_key
     where o.is_delivered
@@ -514,49 +449,37 @@
     group by d.month_start
     order by d.month_start
   verified: true
-  notes: "8 rows, Jan-Aug 2018. R$8,451,584.77 across 52,783 delivered orders — 54.8% of
-    all delivered revenue against 54.7% of delivered orders, and an average order
-    value of R$160.12 against the overall R$159.83. Only 8 months because Sept 2018
-    has 16 orders and Oct has 4, none delivered: the dataset was captured mid-October
-    2018 and those orders were still in transit."
+  notes: "8 rows, Jan-Aug 2018. R$8,451,584.77 across 52,783 delivered orders — 54.8% of all delivered revenue against 54.7% of delivered orders, and an average order value of R$160.12 against the overall R$159.83. Only 8 months because Sept 2018 has 16 orders and Oct has 4, none delivered: the dataset was captured mid-October 2018 and those orders were still in transit. Gold corrected in Session 10: dropped `orders`."
 
 - id: Q032
   category: time_series
-  question: How many orders were placed in each quarter, across all years?
+  question: How many orders were placed in each quarter, across all years? Identify each quarter by its start date.
   expected_behavior: answer
   sql: |
     select
-        d.year,
-        d.quarter,
+        d.quarter_start,
         count(*) as orders
     from marts.fct_orders o
     join marts.dim_dates d on o.order_date = d.date_key
-    group by d.year, d.quarter
-    order by d.year, d.quarter
+    group by d.quarter_start
+    order by d.quarter_start
   verified: true
-  notes: "10 rows. Sums to 99,441 exactly. 2018 Q3 (12,820) = Jul 6,292 + Aug 6,512 +
-    Sep 16, matching Q031. 2018 Q4 is the 4 October orders alone. Volume by year:
-    2016 329 (0.3%), 2017 45,101 (45.4%), 2018 54,011 (54.3%). Peak quarter is
-    2018 Q1; the decline after is the mid-October cutoff, not falling demand."
+  notes: "10 rows. Sums to 99,441 exactly. 2018 Q3 (12,820) = Jul 6,292 + Aug 6,512 + Sep 16, matching Q031. 2018 Q4 is the 4 October orders alone. Volume by year: 2016 329 (0.3%), 2017 45,101 (45.4%), 2018 54,011 (54.3%). Peak quarter is 2018 Q1; the decline after is the mid-October cutoff, not falling demand. Gold corrected in Session 10: the gold split the quarter across two columns (year, quarter) while the agent used the single `quarter_start`. Both answer the question, so the question now pins the representation -- and `quarter_start` is the choice that matches `month_start` used in Q031, Q033 and Q035."
 
 - id: Q033
   category: time_series
   question: Which calendar month had the highest number of delivered orders?
   expected_behavior: answer
   sql: |
-    select
-        d.month_start,
-        count(*) as delivered_orders
+    select d.month_start
     from marts.fct_orders o
     join marts.dim_dates d on o.order_date = d.date_key
     where o.is_delivered
     group by d.month_start
-    order by delivered_orders desc
+    order by count(*) desc
     limit 1
   verified: true
-  notes: "2017-11-01, 7,289 delivered orders. Beats every 2018 month (highest is January
-    at 7,069) despite 2018 having higher annual volume. Almost certainly Black
-    Friday — late November is Brazil's largest e-commerce event."
+  notes: "2017-11-01, 7,289 delivered orders. Beats every 2018 month (highest is January at 7,069) despite 2018 having higher annual volume. Almost certainly Black Friday — late November is Brazil's largest e-commerce event. Gold corrected in Session 10: dropped `delivered_orders`: 'which month' asks for a month."
 
 - id: Q034
   category: time_series
@@ -575,17 +498,12 @@
     )
     select
         month_start,
-        round(revenue, 2)                                  as revenue,
-        round(revenue - lag(revenue) over (order by month_start), 2) as change_vs_prior,
-        round(100.0 * (revenue - lag(revenue) over (order by month_start))
-              / lag(revenue) over (order by month_start), 2)        as pct_change
+        round(revenue - lag(revenue) over (order by month_start), 2)
+            as change_vs_prior
     from monthly
     order by month_start
   verified: true
-  notes: "8 rows, first change_vs_prior empty (no prior month). Cross-check confirms the
-    changes sum to -92,395.82 = August minus January. Revenue fell 8.6% Jan-Aug.
-    February's -10.36% is largely calendar: 28 days is 90.3% of January's 31, and
-    February revenue was 89.6% of January's."
+  notes: "8 rows, first change_vs_prior empty (no prior month). Cross-check confirms the changes sum to -92,395.82 = August minus January. Revenue fell 8.6% Jan-Aug. February's -10.36% is largely calendar: 28 days is 90.3% of January's 31, and February revenue was 89.6% of January's. Gold corrected in Session 10: dropped `revenue` and `pct_change`: the question asks for the change."
 
 - id: Q035
   category: time_series
@@ -594,7 +512,6 @@
   sql: |
     select
         d.month_start,
-        count(*)                         as delivered_orders,
         round(avg(o.days_to_deliver), 2) as avg_days_to_deliver
     from marts.fct_orders o
     join marts.dim_dates d on o.order_date = d.date_key
@@ -603,10 +520,7 @@
     group by d.month_start
     order by d.month_start
   verified: true
-  notes: "Delivery time improved 14.01 to 7.66 days Jan-Aug, a 45% reduction. Weighted
-    2018 average 12.0639 against the all-time 12.4973. Row counts differ slightly
-    from Q031 because this filters on days_to_deliver rather than is_delivered:
-    Jun -3, Jul -3 (delivered with no date) and Feb +1 (dated but not delivered)."
+  notes: "Delivery time improved 14.01 to 7.66 days Jan-Aug, a 45% reduction. Weighted 2018 average 12.0639 against the all-time 12.4973. Row counts differ slightly from Q031 because this filters on days_to_deliver rather than is_delivered: Jun -3, Jul -3 (delivered with no date) and Feb +1 (dated but not delivered). Gold corrected in Session 10: dropped `delivered_orders`."
 
 - id: Q036
   category: time_series
@@ -624,13 +538,11 @@
     )
     select
         month_start,
-        round(revenue, 2)                                              as revenue,
-        round(sum(revenue) over (order by month_start), 2)             as cumulative_revenue
+        round(sum(revenue) over (order by month_start), 2) as cumulative_revenue
     from monthly
     order by month_start
   verified: true
-  notes: "Cumulative delivered revenue ends at R$15,419,773.75, matching Q003 exactly —
-    every month's revenue adds back to the total, so the date join drops nothing."
+  notes: "Cumulative delivered revenue ends at R$15,419,773.75, matching Q003 exactly — every month's revenue adds back to the total, so the date join drops nothing. Gold corrected in Session 10: dropped the per-month `revenue`: the question asks for cumulative."
 
 - id: Q037
   category: time_series
@@ -639,7 +551,6 @@
   sql: |
     select
         d.is_weekend,
-        count(*)                     as orders,
         round(avg(o.order_value), 2) as avg_order_value
     from marts.fct_orders o
     join marts.dim_dates d on o.order_date = d.date_key
@@ -647,24 +558,21 @@
     group by d.is_weekend
     order by d.is_weekend
   verified: true
-  notes: "96478. Cross-check confirms the two groups sum to all delivered orders."
+  notes: "96478. Cross-check confirms the two groups sum to all delivered orders. Gold corrected in Session 10: dropped `orders`."
 
 - id: Q038
   category: time_series
   question: Which day of the week receives the most orders?
   expected_behavior: answer
   sql: |
-    select
-        d.day_name,
-        count(*) as orders
+    select d.day_name
     from marts.fct_orders o
     join marts.dim_dates d on o.order_date = d.date_key
     group by d.day_name
-    order by orders desc
+    order by count(*) desc
     limit 1
   verified: true
-  notes: "Monday, 16,196 orders — 16.3% of all 99,441 against an even split of 14.3%.
-    Cross-check confirms day-of-week counts sum to the full total."
+  notes: "Monday, 16,196 orders — 16.3% of all 99,441 against an even split of 14.3%. Cross-check confirms day-of-week counts sum to the full total. Gold corrected in Session 10: dropped `orders`: 'which day' asks for a day."
 
 - id: Q039
   category: time_series
@@ -673,7 +581,6 @@
   sql: |
     select
         d.year,
-        count(*)                      as reviewed_orders,
         round(avg(o.review_score), 3) as avg_review_score
     from marts.fct_orders o
     join marts.dim_dates d on o.order_date = d.date_key
@@ -681,7 +588,7 @@
     group by d.year
     order by d.year
   verified: true
-  notes: "98673. Cross-check confirms yearly reviewed-order counts sum to all reviewed orders."
+  notes: "98673. Cross-check confirms yearly reviewed-order counts sum to all reviewed orders. Gold corrected in Session 10: dropped `reviewed_orders`."
 
 - id: Q040
   category: time_series
@@ -690,8 +597,6 @@
   sql: |
     select
         d.month_start,
-        count(*)                                                   as delivered_orders,
-        count(*) filter (where o.is_late)                          as late_orders,
         round(100.0 * count(*) filter (where o.is_late) / count(*), 2) as late_pct
     from marts.fct_orders o
     join marts.dim_dates d on o.order_date = d.date_key
@@ -701,10 +606,7 @@
     group by d.month_start
     order by d.month_start
   verified: true
-  notes: "Highly volatile: 1.36% late in June to 21.36% in March, a 16x swing. 4,944 late
-    of 52,777 delivered-and-dated orders Jan-Aug = 9.37%, above the all-time 8.11% —
-    but March alone drives that. Excluding March, 2018 runs at 7.53%, below average.
-    Feb+Mar together were 18.76% late. Something broke in Q1 2018 and recovered by June."
+  notes: "Highly volatile: 1.36% late in June to 21.36% in March, a 16x swing. 4,944 late of 52,777 delivered-and-dated orders Jan-Aug = 9.37%, above the all-time 8.11% — but March alone drives that. Excluding March, 2018 runs at 7.53%, below average. Feb+Mar together were 18.76% late. Something broke in Q1 2018 and recovered by June. Gold corrected in Session 10: dropped `delivered_orders` and `late_orders`: the question asks for the share."
 
 - id: Q041
   category: ambiguous

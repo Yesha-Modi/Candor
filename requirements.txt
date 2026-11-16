@@ -8,3 +8,4 @@ google-genai==3.3.0
 pydantic==2.14.1
 PyYAML==6.0.3
 sqlglot==30.22.0
+ruamel.yaml==0.19.1

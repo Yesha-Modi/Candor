@@ -1,4 +1,8 @@
-"""Turn the semantic layer into the context the model receives.
+"""Turn the semantic layer -- or the bare schema -- into the model's context.
+
+Two modes live here, and that is the whole experiment: `semantic` sends the
+semantic layer, `schema` sends only table and column names. Everything else is
+held constant between them.
 
 The layer is small enough — 14 metrics, 9 dimensions — to send whole. Retrieval
 becomes worth building when it does not fit, which is somewhere north of a few
@@ -37,6 +41,28 @@ Rules for the SQL you write:
   - Apply each metric's filters exactly as defined.
   - Respect every join warning.
   - Prefer joining dim_dates over computing dates inline.
+  - Round money to 2 decimal places.
+
+Report every choice the question did not specify in `assumptions`.
+"""
+
+
+SCHEMA_RULES = """\
+You translate business questions into DuckDB SQL for an e-commerce dataset.
+
+You have three choices, and choosing correctly matters more than answering.
+
+ANSWER — the question is clear and the tables below can address it.
+  Write one SELECT statement using only the tables and columns below.
+
+CLARIFY — the question has more than one defensible reading AND they produce
+  different numbers. Ask which is wanted.
+
+REFUSE — the data cannot answer the question. Say which data is missing.
+
+Rules for the SQL you write:
+  - SELECT only. No INSERT, UPDATE, DELETE, CREATE, DROP or ATTACH.
+  - Use only the tables and columns defined below.
   - Round money to 2 decimal places.
 
 Report every choice the question did not specify in `assumptions`.
@@ -115,16 +141,72 @@ def build_context(layer: dict) -> str:
     return "\n".join(parts)
 
 
-def build_prompt(question: str, layer: dict | None = None) -> str:
-    layer = layer or load_layer()
+def build_schema_context() -> str:
+    """Every table and column, and nothing else.
+
+    This is the control condition: what a text-to-SQL demo gets. No metric
+    definitions, no join paths, no warnings, no list of unanswerable subjects.
+    """
+    import duckdb
+
+    from src.config import DB_PATH
+
+    con = duckdb.connect(str(DB_PATH), read_only=True)
+    try:
+        rows = con.execute("""
+            select table_schema, table_name, column_name, data_type
+            from information_schema.columns
+            where table_schema = 'marts'
+            order by table_name, ordinal_position
+        """).fetchall()
+    finally:
+        con.close()
+
+    parts = ["TABLES AND COLUMNS"]
+    current = None
+    for schema, table, column, dtype in rows:
+        qualified = f"{schema}.{table}"
+        if qualified != current:
+            parts.append(f"\n  {qualified}")
+            current = qualified
+        parts.append(f"    {column}  {dtype.lower()}")
+    return "\n".join(parts)
+
+
+def build_prompt(question: str, layer: dict | None = None,
+                 mode: str = "semantic") -> str:
+    """Assemble the prompt for one question.
+
+    mode="semantic" sends the semantic layer. mode="schema" sends only table
+    and column names. Everything else is held constant between the two --
+    identical decision options, identical output schema, identical SQL rules --
+    so that a difference in results is attributable to the semantic layer and
+    not to having been asked a different kind of question.
+    """
+    if mode == "schema":
+        rules, context = SCHEMA_RULES, build_schema_context()
+    elif mode == "semantic":
+        layer = layer or load_layer()
+        # The semantic layer says what things MEAN. It does not list every
+        # column, and the first benchmark run showed what that costs: the
+        # model invented `seller_id`, `product_category`, `order_status`,
+        # `customer_unique_id` and `freight_value`, and six questions died on
+        # a binder error. Declared dimensions worked; everything else was a
+        # guess. So the column inventory goes in as well -- and this also
+        # removes a confound, since the control condition had it all along.
+        rules = SYSTEM_RULES
+        context = build_context(layer) + "\n\n" + build_schema_context()
+    else:
+        raise ValueError(f"unknown mode {mode!r}; expected 'semantic' or 'schema'")
+
     return (
-        SYSTEM_RULES
+        rules
         + "\n"
         + "=" * 70
-        + "\nSEMANTIC LAYER\n"
+        + f"\n{'SEMANTIC LAYER' if mode == 'semantic' else 'SCHEMA'}\n"
         + "=" * 70
         + "\n"
-        + build_context(layer)
+        + context
         + "\n"
         + "=" * 70
         + f"\nQUESTION: {question}\n"
