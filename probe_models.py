@@ -1,14 +1,15 @@
 """Probe which models actually answer right now.
 
 list_models.py says which models exist. This says which ones are serving: it
-sends the smallest possible real request to each candidate and reports what
-came back.
+asks the key for its own model list, then sends the smallest possible real
+request to each one and reports what came back.
 
 Retries are deliberately OFF here and the timeout is short. provider.py wants
 persistence; this wants a snapshot of the current moment.
 
-    python probe_models.py
-    python probe_models.py --all
+    python probe_models.py                  # flash and pro models
+    python probe_models.py --filter flash   # narrower
+    python probe_models.py --all            # everything the key lists
 """
 
 import argparse
@@ -24,22 +25,15 @@ load_dotenv()
 API_VERSION = "v1beta"
 PROBE_TIMEOUT_MS = 15_000
 PROMPT = "Reply with the single word: ok"
-
-CANDIDATES = [
-    "gemini-3.8-flash",
-    "gemini-3.8-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-2.5-pro",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-]
+DEFAULT_KEEP = ("flash", "pro")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--all", action="store_true",
-                        help="probe every generateContent model the key lists")
+                        help="probe every generateContent model, not just flash/pro")
+    parser.add_argument("--filter", default=None,
+                        help="only probe models whose name contains this text")
     args = parser.parse_args()
 
     key = os.getenv("GEMINI_API_KEY")
@@ -56,13 +50,22 @@ def main() -> None:
         ),
     )
 
-    names = CANDIDATES
-    if args.all:
-        names = sorted(
-            m.name.replace("models/", "")
-            for m in client.models.list()
-            if m.supported_actions and "generateContent" in m.supported_actions
-        )
+    # Ask the key what it has. Never guess model names -- a hardcoded list is a
+    # guess about somebody else's account.
+    names = sorted(
+        m.name.replace("models/", "")
+        for m in client.models.list()
+        if m.supported_actions and "generateContent" in m.supported_actions
+    )
+
+    if args.filter:
+        names = [n for n in names if args.filter in n]
+    elif not args.all:
+        names = [n for n in names if any(k in n for k in DEFAULT_KEEP)]
+
+    if not names:
+        print("No models matched. Run with --all to see everything the key lists.")
+        return
 
     print(f"probing {len(names)} models on {API_VERSION}, "
           f"{PROBE_TIMEOUT_MS // 1000}s each, no retries\n")
@@ -82,10 +85,10 @@ def main() -> None:
             )
         except Exception as e:
             code = getattr(e, "code", None) or type(e).__name__
-            print(f"  {name:<26} {code}")
+            print(f"  {name:<34} {code}")
             continue
 
-        print(f"  {name:<26} OK  {time.perf_counter() - started:.1f}s")
+        print(f"  {name:<34} OK  {time.perf_counter() - started:.1f}s")
         working.append(name)
 
     print()
@@ -94,7 +97,7 @@ def main() -> None:
         for n in working:
             print(f'  python -m agent.ask "What is our revenue?" --model {n}')
     else:
-        print("Nothing answered. All 503 means the free tier is saturated -- "
+        print("Nothing answered. All 503/504 means the free tier is saturated -- "
               "wait and rerun.\nAll 429 means you are rate limited -- wait a "
               "minute. All 404 means the API version is wrong.")
 

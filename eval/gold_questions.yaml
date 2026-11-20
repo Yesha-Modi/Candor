@@ -322,7 +322,7 @@
 
 - id: Q025
   category: multi_table_join
-  question: What is the average freight cost as a share of item price, by product category, among categories with at least 100 delivered items?
+  question: What is the average freight cost as a percentage of item price, by product category, among categories with at least 100 delivered items?
   expected_behavior: answer
   sql: |
     select
@@ -337,7 +337,7 @@
     having count(*) >= 100
     order by freight_pct_of_price desc
   verified: true
-  notes: "4.42% (computers) to 36.52% (christmas_supplies) across 52 categories at 100+ items. All 8 overlapping values match the Q016 freight spot-check exactly; item counts match Q022 exactly. Freight share tracks inversely with average item price — cheap bulky goods ship expensively as a share of value. office_furniture (R$161, 25.01%) is the sensible exception: expensive and bulky. Gold corrected in Session 10: dropped `items` and stated the threshold in the question."
+  notes: "4.42% (computers) to 36.52% (christmas_supplies) across 52 categories at 100+ items. All 8 overlapping values match the Q016 freight spot-check exactly; item counts match Q022 exactly. Freight share tracks inversely with average item price — cheap bulky goods ship expensively as a share of value. office_furniture (R$161, 25.01%) is the sensible exception: expensive and bulky. Gold corrected in Session 10: dropped `items` and stated the threshold in the question.  Session 11: the question said 'share' without units; the gold returns a percentage, so the question now says so."
 
 - id: Q026
   category: multi_table_join

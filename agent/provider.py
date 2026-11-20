@@ -21,12 +21,17 @@ API_VERSION = "v1beta"
 # The model, in one place. GEMINI_MODEL in .env overrides it, so a saturated
 # default does not mean editing code or passing --model on every command.
 DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
-MAX_OUTPUT_TOKENS = 2048
+# A reasoning model spends output tokens THINKING before it writes anything,
+# and those tokens count against this limit. gemini-4-hydrogen hit the old
+# 2048 and returned finish_reason=MAX_TOKENS with no text at all: the whole
+# budget went on thought. Raising it costs nothing for models that do not
+# think -- they stop when they are done.
+MAX_OUTPUT_TOKENS = 8192
 
 # 503 "high demand" is normal on a free tier. Retry it, with a bound you can
 # compute: 4 attempts x 30s, plus ~19s of backoff, is under 2m20s worst case.
 RETRY_ATTEMPTS = 4
-RETRY_CODES = [408, 429, 500, 502, 503, 504]
+RETRY_CODES = [408, 500, 502, 503, 504]
 
 
 class Provider(Protocol):
@@ -112,9 +117,14 @@ class GeminiProvider:
             finish = getattr(finish, "name", finish)
 
         if not raw.text:
+            thinking = getattr(
+                getattr(raw, "usage_metadata", None), "thoughts_token_count", None)
             raise RuntimeError(
-                f"{self.name} returned no text (finish_reason={finish}). "
-                f"If that says MAX_TOKENS, raise MAX_OUTPUT_TOKENS in provider.py."
+                f"{self.name} returned no text (finish_reason={finish}, "
+                f"thinking_tokens={thinking}, budget={MAX_OUTPUT_TOKENS}). "
+                f"If finish_reason is MAX_TOKENS and thinking_tokens is close "
+                f"to the budget, this is a reasoning model that spent the whole "
+                f"allowance thinking: raise MAX_OUTPUT_TOKENS."
             )
 
         try:
@@ -132,6 +142,9 @@ class GeminiProvider:
             "seconds": round(seconds, 2),
             "prompt_tokens": getattr(usage, "prompt_token_count", None),
             "output_tokens": getattr(usage, "candidates_token_count", None),
+            # Thinking tokens, reported separately because they are invisible
+            # in the answer and yet are what exhausts the output budget.
+            "thinking_tokens": getattr(usage, "thoughts_token_count", None),
             "finish_reason": finish,
         }
         return response, meta

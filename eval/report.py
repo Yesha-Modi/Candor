@@ -22,14 +22,32 @@ RESULTS_DIR = PROJECT_ROOT / "results"
 CORRECT_VERDICTS = {"match", "match_reordered", "decision_right"}
 
 # Not the model's fault. Counted and reported, never scored.
+#
+# `answer_error` is deliberately NOT here. A model that returns nothing
+# parseable, or spends its whole token budget thinking, has failed the
+# question -- that is a result about the model, not an outage. Excluding it
+# would quietly flatter whichever model fails that way most.
 EXCLUDED_VERDICTS = {"api_error", "gold_sql_error", "no_gold_sql"}
+
+
+def dedupe(records: list[dict]) -> list[dict]:
+    """Keep the LAST record per question id.
+
+    The results file is an append-only log. A question retried after an
+    api_error appears twice, and the later record is the real one. Counting
+    both would score one question twice and skew every number built on it.
+    """
+    latest: dict[str, dict] = {}
+    for r in records:
+        latest[r["id"]] = r
+    return list(latest.values())
 
 
 def load(path: Path) -> list[dict]:
     if not path.exists():
         raise SystemExit(f"no results at {path}. Run eval.benchmark first.")
     with open(path, encoding="utf-8") as f:
-        return [json.loads(line) for line in f if line.strip()]
+        return dedupe([json.loads(line) for line in f if line.strip()])
 
 
 def is_correct(r: dict) -> bool:

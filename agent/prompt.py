@@ -195,7 +195,15 @@ def build_prompt(question: str, layer: dict | None = None,
         # guess. So the column inventory goes in as well -- and this also
         # removes a confound, since the control condition had it all along.
         rules = SYSTEM_RULES
-        context = build_context(layer) + "\n\n" + build_schema_context()
+        context = (
+            build_context(layer)
+            + "\n\n"
+            + "The metrics above are DEFINITIONS. Expand a metric into its\n"
+              "expression; never write a metric name into SQL as if it were a\n"
+              "column. The only names you may reference in SQL are the column\n"
+              "names below.\n\n"
+            + build_schema_context()
+        )
     else:
         raise ValueError(f"unknown mode {mode!r}; expected 'semantic' or 'schema'")
 
