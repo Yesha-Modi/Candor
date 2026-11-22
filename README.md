@@ -190,17 +190,17 @@ result is the more stable of the two.
 ## How it works
 
 ```mermaid
-flowchart TD
+flowchart LR
     Q["Business question"] --> P["Prompt builder"]
-    SL[("Semantic layer<br>14 metrics · 9 dimensions · 7 joins<br>7 unavailable subjects")] --> P
-    SC[("Column inventory<br>read from the database")] --> P
-    P --> M["Gemini · structured JSON output"]
+    SL[("Semantic layer: 14 metrics, 9 dimensions, 7 joins, 7 unavailable subjects")] --> P
+    SC[("Column inventory, read from the database")] --> P
+    P --> M["Gemini, structured JSON output"]
     M --> D{"Decision"}
     D -- clarify --> C["Clarifying question"]
     D -- refuse --> R["Refusal and reason"]
-    D -- answer --> G["Guard · sqlglot syntax-tree checks"]
+    D -- answer --> G["Guard: sqlglot syntax-tree checks"]
     G -- blocked --> B["Blocked, with the reason"]
-    G -- passes --> DB[("DuckDB · read-only")]
+    G -- passes --> DB[("DuckDB, read-only")]
     DB --> A["Answer, SQL and assumptions"]
 ```
 
@@ -346,7 +346,7 @@ Stated plainly, because a reader should not have to discover them.
 ## Running it
 
 ```bash
-git clone https://github.com/<your-username>/candor.git
+git clone https://github.com/<Yesha-Modi>/candor.git
 cd candor
 
 py -3.13 -m venv .venv
