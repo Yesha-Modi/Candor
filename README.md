@@ -201,19 +201,7 @@ result is the more stable of the two.
 
 ## How it works
 
-```mermaid
-%%{init: {'flowchart': {'diagramPadding': 100}}}%%
-flowchart LR
-    SL[("Semantic layer<br>14 metrics · 9 dimensions<br>7 joins · 7 unavailable")] --> P
-    Q["Business<br>question"] --> P["Prompt<br>builder"]
-    SC[("Column inventory<br>from the database")] --> P
-    P --> M["Gemini<br>structured JSON"] --> D{"Decision"}
-    D -- clarify --> C["Clarifying<br>question"]
-    D -- refuse --> R["Refusal<br>and reason"]
-    D -- answer --> G["Guard<br>syntax-tree<br>checks"]
-    G -- blocked --> B["Blocked,<br>with reason"]
-    G -- passes --> DB[("DuckDB<br>read-only")] --> A["Answer, SQL<br>and assumptions"]
-```
+![Architecture Diagram](docs/img/architecture.png)
 
 **The decision is structured, not parsed.** The model returns a validated JSON object with a
 required `decision` field. A response that is neither an answer, a question, nor a refusal is
