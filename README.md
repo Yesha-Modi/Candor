@@ -3,13 +3,17 @@
 **An analytics agent that would rather say "I don't know" than hand you a wrong number.**
 
 Ask a business question in plain English. Get the SQL, the answer, and the assumptions behind
-it — or a clarifying question, or a refusal with the reason.
+it. Or a clarifying question. Or a refusal with the reason.
 
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![dbt Core](https://img.shields.io/badge/dbt-Core-FF694B?style=for-the-badge&logo=dbt&logoColor=white)](https://docs.getdbt.com/)
 [![DuckDB](https://img.shields.io/badge/DuckDB-Warehouse-FFF000?style=for-the-badge&logo=duckdb&logoColor=yellow)](https://duckdb.org/)
 [![Benchmark](https://img.shields.io/badge/Benchmark-60_Questions-00A86B?style=for-the-badge)](#results)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
+
+<p align="center">
+  <img src="docs/img/demo.gif" alt="Asked which product category earned the most revenue, CANDOR returns the SQL and the figure. Asked for profit margin, it refuses and explains that the dataset has no cost data." width="820">
+</p>
 
 ---
 
@@ -19,7 +23,7 @@ Every company has the same bottleneck. The people who need answers can't write S
 who can are a small team with a queue. A question becomes a ticket, the ticket takes three
 days, and the meeting it was for already happened.
 
-The obvious fix is to put a language model in the middle. Most attempts fail — and they fail in
+The obvious fix is to put a language model in the middle. Most attempts fail, and they fail in
 a way that makes them worse than useless.
 
 **They don't fail loudly. They fail silently.** The model returns a confident, cleanly
@@ -34,12 +38,16 @@ Two queries against this database. Both run. Neither errors. Neither warns.
 |---|---|
 | Total order value, computed correctly | **R$15,843,550** |
 | Same figure, after one careless join | **R$20,304,560** |
-| Overcounted | **R$4,461,010 — 28.2%** |
+| Overcounted | **R$4,461,010, or 28.2%** |
 
 The second query joins orders to order items and then sums an order-level column, so each order
 is counted once per item it contains. The row count inflates by only 14.2%, but the money
 inflates by 28.2%: orders with more items are also the expensive ones, so the multiplication
-lands hardest where it costs most. **You cannot estimate this error from the row counts.**
+lands hardest where it costs most.
+
+> ⚠️WARNING: 
+> Both queries run. Neither errors. The row count inflates by 14.2% while the money inflates by
+> 28.2%, so you cannot estimate the error from the row counts.
 
 ---
 
@@ -58,10 +66,10 @@ layer as well.
 |---|---:|---:|---:|
 | Time series | 2/10 | 6/10 | +4 |
 | Multi-table joins | 7/15 | 9/15 | +2 |
-| Ambiguous — should clarify | 7/10 | 8/10 | +1 |
-| Unanswerable — should refuse | 10/10 | 10/10 | 0 |
+| Ambiguous (should clarify) | 7/10 | 8/10 | +1 |
+| Unanswerable (should refuse) | 10/10 | 10/10 | 0 |
 | Simple aggregates | 15/15 | 14/15 | −1 |
-| **Overall** | **41/60 — 68.3%** | **47/60 — 78.3%** | **+10.0 points** |
+| **Overall** | **41/60, 68.3%** | **47/60, 78.3%** | **+10.0 points** |
 
 `gemini-3.1-flash-lite`, Google AI Studio free tier, November 2026. Both runs used the same
 prompt version, before the prompt change described in *What was learned*. Scored by executing
@@ -82,12 +90,16 @@ floor is one question. That decides what can be claimed:
 
 | Claim | Gap | Verdict |
 |---|---:|---|
-| The semantic layer beats schema-only | 6 questions | **Holds** — six times the noise floor |
-| `gemini-3.5-flash-lite` is weaker than `3.1-flash-lite` | 5 questions | **Holds, cautiously** — five times the noise floor, but 3.5 ran once |
-| Listing every column in the prompt helped | 2 questions | **Marginal** — twice the noise floor, measured once |
+| The semantic layer beats schema-only | 6 questions | **Holds.** Six times the noise floor |
+| `gemini-3.5-flash-lite` is weaker than `3.1-flash-lite` | 5 questions | **Holds, cautiously.** Five times the noise floor, but 3.5 ran once |
+| Listing every column in the prompt helped | 2 questions | **Marginal.** Twice the noise floor, measured once |
 
-One pair of runs is one measurement of the noise, not the last word on it. The categories that
-did not move at all — simple aggregates, time series, ambiguous, unanswerable — are what make the
+> [!IMPORTANT]
+> Two identical runs of the same model agreed on 59 of 60 questions. A 6-question gap is six
+> times that; a 2-question gap is not a result.
+
+One pair of runs is one measurement of the noise, not the last word on it. Four categories did not move
+at all: simple aggregates, time series, ambiguous and unanswerable. That is what makes the
 per-category results worth reading.
 
 ---
@@ -101,7 +113,7 @@ The control run separates two kinds of mistake:
 | The semantic layer fixed it | It happened with and without the semantic layer |
 |---|---|
 | Swapping `item_total` (includes freight) for `item_price` | Returning extra columns nobody asked for |
-| Grouping by `month_name` — "April" across three years | A proportion where a percentage was asked for |
+| Grouping by `month_name`, so "April" spans three years | A proportion where a percentage was asked for |
 | Dropping a required filter | A column labelled `revenue` holding item revenue |
 | Inventing a column that does not exist | No column label at all |
 
@@ -110,7 +122,7 @@ right column is choices about **shape, naming and form**, and better context did
 A semantic layer is worth building to stop wrong numbers. It is not a substitute for checking how
 a right number is presented.
 
-### 2. Targeted instructions fixed what they named — and broke two other things
+### 2. Targeted instructions fixed what they named, and broke two other things
 
 Two of those form errors were then attacked directly: one sentence telling the model that metric
 names are definitions, not columns, and one question reworded from "share" to "percentage".
@@ -128,7 +140,7 @@ time-series question and refuse an ambiguous one it had previously clarified. Ne
 two broken.
 
 **A prompt change is not a local fix.** It is visible here only because the change was measured
-against two independent runs — with one run, the two new failures would have looked like noise
+against two independent runs. With one run, the two new failures would have looked like noise
 and the five fixes would have looked like luck.
 
 The bottom row matters too: **eight questions fail on every run.** The remaining failures are
@@ -136,9 +148,9 @@ not random. They are a stable set, worth fixing one at a time.
 
 ### 3. The refusals were never the semantic layer's doing
 
-The prediction going into the control run was that without the semantic layer — no list of
-unavailable data, no definitions — the agent would start inventing answers to questions the data
-cannot support. **It refused all ten anyway**, profit margin included, on a dataset with no cost
+The prediction going into the control run was that without the semantic layer, with no list of
+unavailable data and no definitions, the agent would start inventing answers to questions the
+data cannot support. **It refused all ten anyway**, profit margin included, on a dataset with no cost
 data.
 
 The refusals come from the decision framework: the model is offered ANSWER, CLARIFY and REFUSE
@@ -152,18 +164,18 @@ Without the semantic layer, asked which seller earned the most from delivered it
 
 | | |
 |---|---|
-| Correct — `item_price` | R$226,987.93 |
-| Schema-only — `item_total`, which includes freight | R$247,007.06 |
+| Correct, using `item_price` | R$226,987.93 |
+| Schema-only, using `item_total`, which includes freight | R$247,007.06 |
 | **Overstated by** | **8.8%** |
 
 No error, no warning, a plausible column name and a plausible number. A second question dropped
 the "delivered" filter and overstated by 2.1%. With the semantic layer, both were right.
 
-### 5. Fan-out survives every condition — and its cost depends on the column
+### 5. Fan-out survives every condition, and its cost depends on the column
 
 The agent still joins order items and then averages an order-level column, in every run, with and
 without the semantic layer. On average delivery time by seller state, that shifts each state's
-figure by hundredths of a day. On order value, the same mistake costs 28% — the figure this README
+figure by hundredths of a day. On order value, the same mistake costs 28%, the figure this README
 opens with.
 
 **The bug is identical. Only the column decides what it costs**, because the damage depends on
@@ -191,17 +203,15 @@ result is the more stable of the two.
 
 ```mermaid
 flowchart LR
-    Q["Business question"] --> P["Prompt builder"]
-    SL[("Semantic layer: 14 metrics, 9 dimensions, 7 joins, 7 unavailable subjects")] --> P
-    SC[("Column inventory, read from the database")] --> P
-    P --> M["Gemini, structured JSON output"]
-    M --> D{"Decision"}
-    D -- clarify --> C["Clarifying question"]
-    D -- refuse --> R["Refusal and reason"]
-    D -- answer --> G["Guard: sqlglot syntax-tree checks"]
-    G -- blocked --> B["Blocked, with the reason"]
-    G -- passes --> DB[("DuckDB, read-only")]
-    DB --> A["Answer, SQL and assumptions"]
+    SL[("Semantic layer<br>14 metrics · 9 dimensions<br>7 joins · 7 unavailable")] --> P
+    Q["Business<br>question"] --> P["Prompt<br>builder"]
+    SC[("Column inventory<br>from the database")] --> P
+    P --> M["Gemini<br>structured JSON"] --> D{"Decision"}
+    D -- clarify --> C["Clarifying<br>question"]
+    D -- refuse --> R["Refusal<br>and reason"]
+    D -- answer --> G["Guard<br>syntax-tree<br>checks"]
+    G -- blocked --> B["Blocked,<br>with reason"]
+    G -- passes --> DB[("DuckDB<br>read-only")] --> A["Answer, SQL<br>and assumptions"]
 ```
 
 **The decision is structured, not parsed.** The model returns a validated JSON object with a
@@ -209,8 +219,8 @@ required `decision` field. A response that is neither an answer, a question, nor
 rejected before anything runs.
 
 **The semantic layer is sent whole.** It is about 2,840 tokens, small enough that retrieval
-would add a way to fail — the agent missing a metric because a search did not surface it —
-without removing one.
+would add a way to fail, by letting the agent miss a metric a search did not surface, without
+removing one.
 
 **The guard judges the syntax tree, not the text.** Searching SQL for the word `drop` blocks
 the legitimate question "how many orders had a price drop?" and is defeated by a comment. Four
@@ -218,14 +228,14 @@ layers, and they are not the same kind of thing:
 
 | Layer | Kind |
 |---|---|
-| Read-only database connection | Guarantee — enforced by the engine |
+| Read-only database connection | Guarantee, enforced by the engine |
 | One statement, SELECT only | Allowlist |
 | Tables must be declared in the semantic layer | Allowlist |
-| File- and network-reading functions refused | Denylist — best effort, never complete |
+| File- and network-reading functions refused | Denylist, best effort, never complete |
 
 "Read-only" protects the data, not what a query can *read*: `select read_text('C:/secrets.txt')`
 writes nothing and leaks a file. That is why the last layer exists, and why it is listed last.
-37 test cases prove the guard blocks what it must **and** lets real queries through — a guard
+37 test cases prove the guard blocks what it must **and** lets real queries through. A guard
 that blocks everything passes every attack test and is useless.
 
 ### The data layer
@@ -236,14 +246,14 @@ raw (9 tables)  →  staging (9 views)  →  marts (6 tables)
                       deduplicated
 ```
 
-**Dimensions** — `dim_customers`, `dim_products`, `dim_sellers`, `dim_dates`
-**Facts** — `fct_orders` (99,441 rows), `fct_order_items` (112,650 rows)
+**Dimensions:** `dim_customers`, `dim_products`, `dim_sellers`, `dim_dates`
+**Facts:** `fct_orders` (99,441 rows), `fct_order_items` (112,650 rows)
 
 71 dbt nodes and 55 data-quality tests, all passing, including referential-integrity checks and
 a reconciliation test that computes total item value two independent ways and requires them to
 agree to the cent.
 
-[Olist Brazilian E-Commerce](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce) —
+[Olist Brazilian E-Commerce](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce):
 about 100,000 real orders across nine related tables. Public, messy, and complex enough that the
 questions need real joins.
 
@@ -251,12 +261,15 @@ questions need real joins.
 
 ## What the data was hiding
 
+<details>
+<summary><b>Four findings that changed the design</b></summary>
+
 ### A customer is not a customer
 
-The source `customers` table has **99,441 rows — exactly the order count.** Olist issues a new
+The source `customers` table has **99,441 rows, exactly the order count.** Olist issues a new
 customer ID for every order. The person is `customer_unique_id`, and there are **96,096** of
-them. Build on the wrong column and "orders per customer" is 1.00 — reasonable-looking and
-meaningless.
+them. Build on the wrong column and "orders per customer" is 1.00, which looks reasonable and means
+nothing.
 
 ### A review can belong to several orders
 
@@ -273,9 +286,11 @@ translation table. Only the first group is unknown; the second was losing a labe
 ### Eight orders claim delivery with no delivery date
 
 96,478 orders are marked delivered; **96,470** have a delivery date. Those eight get an *empty*
-delivery time, not zero — zero would drag every average down with eight impossible same-day
+delivery time, not zero. Zero would drag every average down with eight impossible same-day
 deliveries. Late is null, not false, for undelivered orders, or a warehouse that stopped shipping
 entirely would show a perfect record.
+
+</details>
 
 ---
 
@@ -291,7 +306,7 @@ testing it rather than reading it.
 | The benchmark's resume | Treated a failed API call as a finished question | Shrank the denominator, silently |
 | 23 of the 60 answer keys | Demanded columns their questions never asked for | Deflated the score by 13 questions |
 | One answer key | Counted a late order that was never delivered | Marked the agent wrong when it was right |
-| The repeat run | Resumed a finished file, so the "repeat" was the original run | Produced a false noise floor and a false finding — caught, and both are corrected above |
+| The repeat run | Resumed a finished file, so the "repeat" was the original run | Produced a false noise floor and a false finding, both caught and corrected above |
 
 The last row is the agent catching its examiner: asked how many **delivered** orders arrived
 late, it answered 7,826 against an answer key of 7,827. The answer key was wrong.
@@ -310,16 +325,16 @@ relevant" is how a correct number gets read as a different one.
 |---|---:|---:|
 | Orders | 99,441 | 96,478 |
 | Total order value | R$15,843,550 | R$15,419,773.75 |
-| — items | R$13,591,640 | R$13,221,498.11 |
-| — freight | R$2,251,910 | R$2,198,275.64 |
-| Average order value | — | R$159.83 |
+| of which items | R$13,591,640 | R$13,221,498.11 |
+| of which freight | R$2,251,910 | R$2,198,275.64 |
+| Average order value | n/a | R$159.83 |
 | Average review score | 4.087 *(orders with a review)* | 4.156 |
-| Average delivery time | — | 12.5 days |
-| Late deliveries | — | 7,826 of 96,470 with a date — 8.1% |
-| Cancelled or unavailable | 1,234 | — |
-| Distinct customers | 96,096 | — |
-| Repeat customers | 2,997 — 3.1% | — |
-| Orders with no line items | 775 | — |
+| Average delivery time | n/a | 12.5 days |
+| Late deliveries | n/a | 7,826 of 96,470 with a date, 8.1% |
+| Cancelled or unavailable | 1,234 | n/a |
+| Distinct customers | 96,096 | n/a |
+| Repeat customers | 2,997, or 3.1% | n/a |
+| Orders with no line items | 775 | n/a |
 
 ---
 
@@ -327,8 +342,12 @@ relevant" is how a correct number gets read as a different one.
 
 Stated plainly, because a reader should not have to discover them.
 
-- **The noise floor comes from one pair of runs** — one question apart, 59 of 60 questions in
-  agreement. Schema-only and `3.5-flash-lite` ran once each.
+> [!NOTE]
+> Every limitation below was found by measurement, not by review. The project's own claim about
+> refusals was wrong, and the control run is what showed it.
+
+- **The noise floor comes from one pair of runs:** one question apart, with 59 of 60 questions
+  in agreement. Schema-only and `3.5-flash-lite` ran once each.
 - **One model family.** Every model was a Gemini model on the free tier. `gemini-4-hydrogen`
   answered 16 of 60 questions across several evenings before its daily quota and repeated
   "high demand" errors stopped it; it is excluded from the comparison rather than scored on
@@ -346,7 +365,7 @@ Stated plainly, because a reader should not have to discover them.
 ## Running it
 
 ```bash
-git clone https://github.com/<Yesha-Modi>/candor.git
+git clone https://github.com/<your-username>/candor.git
 cd candor
 
 py -3.13 -m venv .venv
@@ -369,7 +388,7 @@ python -m src.profile             # 16 data-quality checks
 python -m eval.cross_check        # each gold answer computed two independent ways
 ```
 
-Ask a question — this needs a free [Google AI Studio](https://aistudio.google.com) key in a
+Ask a question. This needs a free [Google AI Studio](https://aistudio.google.com) key in a
 `.env` file as `GEMINI_API_KEY=...`:
 
 ```bash
@@ -410,6 +429,9 @@ Everything is free. There is no paid tier anywhere in the project.
 
 ## Repository layout
 
+<details>
+<summary><b>The project tree</b></summary>
+
 ```
 candor/
 ├── agent/
@@ -434,6 +456,8 @@ candor/
 ├── transform/              dbt project: staging, marts, tests, seeds
 └── docs/img/               generated charts
 ```
+
+</details>
 
 ---
 
