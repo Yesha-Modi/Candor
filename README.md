@@ -202,6 +202,7 @@ result is the more stable of the two.
 ## How it works
 
 ```mermaid
+%%{init: {'flowchart': {'diagramPadding': 100}}}%%
 flowchart LR
     SL[("Semantic layer<br>14 metrics · 9 dimensions<br>7 joins · 7 unavailable")] --> P
     Q["Business<br>question"] --> P["Prompt<br>builder"]
